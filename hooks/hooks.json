@@ -1,0 +1,38 @@
+{
+  "modules": [
+    "./register.tsx"
+  ],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f \"$CLAUDE_PROJECT_DIR/.claude/metodo.json\" ] || exit 0; exec python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.py\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f \"$CLAUDE_PROJECT_DIR/.claude/metodo.json\" ] || exit 0; exec python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/delivery.py\""
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f \"$CLAUDE_PROJECT_DIR/.claude/metodo.json\" ] || exit 0; exec bash \"${CLAUDE_PLUGIN_ROOT}/hooks/startup.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "My Project",
+  "prefix": "myapp",
+  "root": "~/code/my-project",
+  "clones": "lanes",
+  "model": "claude-sonnet-5-5",
+  "lanes": [
+    { "id": "development", "name": "Development", "branches": ["development/"] },
+    { "id": "corrections", "name": "Corrections", "branches": ["correction/"] }
+  ],
+  "bench": "~/.cache/myapp-review",
+  "copyMarker": "CLAUDE.md",
+  "lock": "~/.cache/myapp-e2e.lock",
+  "protected": { "volumes": [], "stacks": [], "folders": [] },
+  "release": [],
+  "jobs": {},
+  "deliveryChecks": [],
+  "docs": { "blocks": "docs/blocks", "corrections": "docs/corrections.md" }
+}

@@ -1,0 +1,846 @@
+<!-- The decision log template (README, "The decision log"). Optional. Publish it as an artifact with the db capability, after replacing PROJECT NAME here and in the title; change the areas here and in your project's CLAUDE.md, together. No entry lives in the page code: they live in the database. -->
+<title>Decision Log PROJECT NAME</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+
+    --paper:        #f7f6f2;
+    --surface:      #ffffff;
+    --surface-sunk: #edece6;
+    --line:         #dcdad1;
+    --line-soft:    #e8e6df;
+
+    --ink:          #1c1f1d;
+    --ink-2:        #4a514c;
+    --ink-3:        #7b837d;
+
+    --accent:       #0d5c56;
+    --accent-soft:  #e2efec;
+    --accent-ink:   #ffffff;
+
+    --open:         #a8641a;
+    --open-bg:      #f8eddc;
+    --talk:         #1f5d8c;
+    --talk-bg:      #e3eef6;
+    --done:         #2f6b3a;
+    --done-bg:      #e4efe4;
+
+    --claude-bg:    #f0eef8;
+    --claude-line:  #cdc5e6;
+    --claude-ink:   #4c3f80;
+
+    --font-ui:   'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-read: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    --r: 9px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --paper:        #14181a;
+      --surface:      #1c2124;
+      --surface-sunk: #101416;
+      --line:         #303739;
+      --line-soft:    #262c2f;
+      --ink:          #e7ebe9;
+      --ink-2:        #a9b2ae;
+      --ink-3:        #77817d;
+      --accent:       #5fb8ac;
+      --accent-soft:  #16302f;
+      --accent-ink:   #0d1f1e;
+      --open:         #d99a4e;
+      --open-bg:      #35281a;
+      --talk:         #6fa9d4;
+      --talk-bg:      #1a2b38;
+      --done:         #79b97f;
+      --done-bg:      #1c2d1f;
+      --claude-bg:    #23203a;
+      --claude-line:  #413a66;
+      --claude-ink:   #b3a7e6;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --paper:        #14181a;
+    --surface:      #1c2124;
+    --surface-sunk: #101416;
+    --line:         #303739;
+    --line-soft:    #262c2f;
+    --ink:          #e7ebe9;
+    --ink-2:        #a9b2ae;
+    --ink-3:        #77817d;
+    --accent:       #5fb8ac;
+    --accent-soft:  #16302f;
+    --accent-ink:   #0d1f1e;
+    --open:         #d99a4e;
+    --open-bg:      #35281a;
+    --talk:         #6fa9d4;
+    --talk-bg:      #1a2b38;
+    --done:         #79b97f;
+    --done-bg:      #1c2d1f;
+    --claude-bg:    #23203a;
+    --claude-line:  #413a66;
+    --claude-ink:   #b3a7e6;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  .shell { display: flex; flex-direction: column; height: 100%; }
+
+  /* ---------------------------------------------------------------- header */
+  .top {
+    flex: 0 0 auto;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    padding: 12px 16px 0;
+  }
+  .top-row {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    max-width: 1400px; margin: 0 auto; width: 100%;
+  }
+  .wordmark { font-size: 15px; font-weight: 700; letter-spacing: -0.015em; }
+  .wordmark span { color: var(--accent); }
+  .meter { display: flex; align-items: center; gap: 9px; margin-left: auto; }
+  .meter-track {
+    width: 120px; height: 5px; border-radius: 99px;
+    background: var(--surface-sunk); overflow: hidden;
+  }
+  .meter-fill { height: 100%; background: var(--done); width: 0%; transition: width .3s ease; }
+  .meter-text { font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  .tabs {
+    display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none;
+    max-width: 1400px; margin: 10px auto 0; width: 100%; padding-bottom: 0;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: 0 0 auto; border: 0; background: transparent; cursor: pointer;
+    padding: 7px 11px 9px; font-size: 12.5px; font-weight: 500;
+    color: var(--ink-3); border-bottom: 2px solid transparent; white-space: nowrap;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .tab i { font-style: normal; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); margin-left: 5px; }
+
+  /* ----------------------------------------------------------------- panes */
+  .panes {
+    flex: 1 1 auto; min-height: 0; display: flex;
+    max-width: 1400px; margin: 0 auto; width: 100%;
+  }
+
+  .list {
+    flex: 0 0 370px; min-width: 0; overflow-y: auto;
+    border-right: 1px solid var(--line); padding: 12px 12px 40px;
+  }
+  .list-tools { display: flex; gap: 7px; margin-bottom: 11px; }
+  .search {
+    flex: 1 1 auto; min-width: 0; padding: 7px 10px; border-radius: var(--r);
+    border: 1px solid var(--line); background: var(--surface); font-size: 13px;
+  }
+  .search::placeholder { color: var(--ink-3); }
+  .pick {
+    flex: 0 0 auto; border: 1px solid var(--line); background: var(--surface);
+    border-radius: var(--r); padding: 7px 10px; font-size: 12.5px; cursor: pointer; color: var(--ink-2);
+  }
+  .pick[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+
+  .group-head {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--ink-3); font-weight: 600; margin: 16px 4px 7px;
+  }
+  .group-head:first-of-type { margin-top: 2px; }
+
+  .item {
+    display: grid; grid-template-columns: auto auto 1fr; gap: 9px; align-items: start;
+    width: 100%; text-align: left; cursor: pointer;
+    background: var(--surface); border: 1px solid var(--line-soft);
+    border-radius: var(--r); padding: 9px 10px; margin-bottom: 5px;
+  }
+  .item:hover { border-color: var(--line); }
+  .item[aria-current="true"] { border-color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
+  .item-id {
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+    color: var(--ink-3); padding-top: 2px; min-width: 24px;
+  }
+  .item-body { min-width: 0; }
+  .item-title { font-size: 13px; line-height: 1.35; font-weight: 500; }
+  .item-meta { display: flex; align-items: center; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+  .item.flagged .item-title::after { content: " ⚠"; color: var(--open); }
+
+  .chip {
+    font-size: 10px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+  }
+  .chip.open      { background: var(--open-bg); color: var(--open); }
+  .chip.discussion { background: var(--talk-bg);  color: var(--talk); }
+  .chip.closed      { background: var(--done-bg);  color: var(--done); }
+  .count { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  .tick {
+    flex: 0 0 auto; width: 15px; height: 15px; border-radius: 4px;
+    border: 1.5px solid var(--line); background: var(--surface);
+    cursor: pointer; display: none; margin-top: 1px;
+  }
+  body.selmode .tick { display: block; }
+  .tick[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
+  .tick[aria-pressed="true"]::after {
+    content: ""; display: block; width: 3.5px; height: 7px; margin: 1px auto 0;
+    border: solid var(--accent-ink); border-width: 0 1.8px 1.8px 0; transform: rotate(45deg);
+  }
+
+  /* ---------------------------------------------------------------- detail */
+  .detail { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 22px 26px 60px; }
+  .detail-inner { max-width: 660px; }
+
+  .d-eyebrow {
+    font-family: var(--font-mono); font-size: 11px; color: var(--accent);
+    font-weight: 600; letter-spacing: .04em;
+  }
+  .d-title {
+    font-family: var(--font-ui); font-size: 22px; line-height: 1.25; font-weight: 700;
+    letter-spacing: -0.015em; margin: 5px 0 14px; text-wrap: balance;
+  }
+  .d-flag {
+    display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 8px;
+    border-radius: 5px; background: var(--open-bg); color: var(--open); margin-bottom: 12px;
+  }
+  .d-section { margin-bottom: 20px; }
+  .d-label {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--ink-3); font-weight: 600; margin-bottom: 6px;
+  }
+  .d-prose {
+    font-family: var(--font-read); font-size: 15.5px; line-height: 1.62; color: var(--ink-2);
+  }
+  .d-prose em { color: var(--ink); font-style: italic; }
+  .d-prose code {
+    font-family: var(--font-mono); font-size: .84em; background: var(--surface-sunk);
+    padding: 1px 4px; border-radius: 3px; color: var(--ink-2);
+  }
+  .d-rec {
+    font-family: var(--font-read); font-size: 15.5px; line-height: 1.62;
+    background: var(--accent-soft); border-left: 3px solid var(--accent);
+    padding: 12px 15px; border-radius: 0 var(--r) var(--r) 0; color: var(--ink);
+  }
+  .d-refs { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-3); line-height: 1.7; }
+  .d-plain { white-space: pre-wrap; }
+
+  .statusbar {
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+    padding: 12px 0; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft);
+    margin-bottom: 20px;
+  }
+  .sbtn {
+    border: 1px solid var(--line); background: var(--surface); cursor: pointer;
+    border-radius: 99px; padding: 5px 12px; font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+  }
+  .sbtn[aria-pressed="true"].open      { background: var(--open-bg); border-color: var(--open); color: var(--open); font-weight: 700; }
+  .sbtn[aria-pressed="true"].discussion { background: var(--talk-bg); border-color: var(--talk); color: var(--talk); font-weight: 700; }
+  .sbtn[aria-pressed="true"].closed      { background: var(--done-bg); border-color: var(--done); color: var(--done); font-weight: 700; }
+
+  .verdict { margin-bottom: 22px; }
+  .verdict textarea, .composer textarea {
+    width: 100%; border: 1px solid var(--line); border-radius: var(--r);
+    background: var(--surface); padding: 10px 12px; font-family: var(--font-read);
+    font-size: 15px; line-height: 1.55; resize: vertical; min-height: 64px;
+  }
+  .verdict textarea::placeholder, .composer textarea::placeholder { font-family: var(--font-ui); font-size: 13.5px; color: var(--ink-3); }
+  .saved { font-size: 11.5px; color: var(--done); margin-top: 5px; height: 14px; }
+
+  .thread { border-top: 1px solid var(--line-soft); padding-top: 18px; }
+  .msg { display: flex; gap: 10px; margin-bottom: 14px; }
+  .avatar {
+    flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 10.5px; font-weight: 700;
+    background: var(--surface-sunk); color: var(--ink-2);
+  }
+  .msg.claude .avatar { background: var(--claude-bg); color: var(--claude-ink); border: 1px solid var(--claude-line); }
+  .bubble { min-width: 0; flex: 1 1 auto; }
+  .bubble-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; flex-wrap: wrap; }
+  .who { font-size: 12.5px; font-weight: 600; }
+  .msg.claude .who { color: var(--claude-ink); }
+  .when { font-size: 11px; color: var(--ink-3); }
+  .bubble-text {
+    font-family: var(--font-read); font-size: 15px; line-height: 1.58;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .also {
+    display: inline-flex; gap: 4px; flex-wrap: wrap; margin-top: 5px;
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3);
+  }
+  .also b { font-weight: 600; color: var(--accent); cursor: pointer; }
+  .del {
+    border: 0; background: transparent; color: var(--ink-3); cursor: pointer;
+    font-size: 11px; padding: 0 3px; margin-left: auto;
+  }
+  .del:hover { color: var(--open); }
+
+  .composer { margin-top: 16px; }
+  .composer-row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+  .send {
+    border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer;
+    border-radius: var(--r); padding: 8px 16px; font-size: 13px; font-weight: 600;
+  }
+  .send:disabled { opacity: .45; cursor: default; }
+  .hint { font-size: 11.5px; color: var(--ink-3); }
+
+  .empty {
+    display: grid; place-items: center; height: 100%;
+    color: var(--ink-3); font-size: 14px; text-align: center; padding: 30px;
+  }
+
+  /* --------------------------------------------------------------- selbar */
+  .selbar {
+    position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%); z-index: 30;
+    display: none; align-items: center; gap: 12px;
+    background: var(--ink); color: var(--paper);
+    border-radius: 99px; padding: 9px 10px 9px 18px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.28); max-width: calc(100% - 32px);
+  }
+  body.selmode .selbar { display: flex; }
+  .selbar-n { font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .selbar button {
+    border: 0; border-radius: 99px; padding: 7px 14px; font-size: 12.5px;
+    font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  .selbar .go { background: var(--accent); color: var(--accent-ink); }
+  .selbar .go:disabled { opacity: .4; cursor: default; }
+  .selbar .off { background: transparent; color: var(--paper); opacity: .7; }
+
+  .sync {
+    position: fixed; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    z-index: 20; display: flex; align-items: center; gap: 6px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 99px; padding: 5px 11px; font-size: 11px; color: var(--ink-3);
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--done); flex: 0 0 auto; }
+  .dot.off { background: var(--open); }
+
+  .back { display: none; }
+
+  @media (max-width: 860px) {
+    .panes { position: relative; }
+    .list { flex: 1 1 auto; border-right: 0; }
+    .detail { display: none; }
+    body.reading .list { display: none; }
+    body.reading .detail { display: block; padding: 16px 16px 70px; }
+    .back {
+      display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line);
+      background: var(--surface); border-radius: var(--r); padding: 6px 12px;
+      font-size: 12.5px; cursor: pointer; margin-bottom: 14px; color: var(--ink-2);
+    }
+    .d-title { font-size: 19px; }
+  }
+</style>
+<style>
+  .empty-list { padding: 18px 6px; color: var(--ink-3); font-size: 13px; line-height: 1.55; }
+  .empty-list code { font-family: var(--font-mono); font-size: 11.5px; background: var(--surface-sunk); padding: 1px 4px; border-radius: 3px; }
+</style>
+
+<div class="shell">
+  <header class="top">
+    <div class="top-row">
+      <div class="wordmark">Decision Log <span>PROJECT NAME</span></div>
+      <div class="meter">
+        <div class="meter-track"><div class="meter-fill" id="meterFill"></div></div>
+        <div class="meter-text" id="meterText">—</div>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Areas"></nav>
+  </header>
+
+  <div class="panes">
+    <aside class="list" id="list">
+      <div class="list-tools">
+        <input type="text" class="search" id="search" placeholder="Search entries…" autocomplete="off" spellcheck="false">
+        <button type="button" class="pick" id="pickBtn" aria-pressed="false" title="Select several entries to comment on them together">⊞ Group</button>
+      </div>
+      <div id="items"></div>
+    </aside>
+
+    <main class="detail" id="detail">
+      <div class="empty" id="emptyState">Pick an entry from the list to open it.</div>
+      <div class="detail-inner" id="detailInner" hidden></div>
+    </main>
+  </div>
+</div>
+
+<div class="selbar" id="selbar">
+  <span class="selbar-n" id="selN">0 entries</span>
+  <button type="button" class="go" id="selGo" disabled>Comment together</button>
+  <button type="button" class="off" id="selOff">Exit</button>
+</div>
+
+<div class="sync"><span class="dot off" id="syncDot"></span><span id="syncText">Connecting…</span></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ------------------------------------------------------------------ areas
+  // An entry id starts with the letter of its area (A1, B3, Q2…).
+  // A letter that is not listed here falls back to D.
+  const AREAS = [
+    { key: "A", label: "Product" },
+    { key: "B", label: "Architecture" },
+    { key: "C", label: "Infrastructure" },
+    { key: "D", label: "Cross-cutting" },
+    { key: "Q", label: "Questions" }
+  ];
+  const FALLBACK_AREA = "D";
+
+  // All entries live in the database, collection `points`: title,
+  // context, recommendation and references as plain text. They are shown
+  // escaped, never as HTML: anyone with access to the log can write them.
+  let POINTS = [];
+  let byId = {};
+
+  function areaIndex(p) {
+    for (let i = 0; i < AREAS.length; i++) if (AREAS[i].key === p.area) return i;
+    return AREAS.length;
+  }
+  function areaOf(id) {
+    const key = id.charAt(0).toUpperCase();
+    return AREAS.some(function (a) { return a.key === key; }) ? key : FALLBACK_AREA;
+  }
+  function buildPoints() {
+    POINTS = Object.keys(state).map(function (id) {
+      const d = state[id] || {};
+      return {
+        id: id, area: areaOf(id),
+        title: d.title || id, flag: !!d.flag,
+        ctx: d.ctx || "", rec: d.rec || "", refs: d.refs || ""
+      };
+    });
+    POINTS.sort(function (a, b) {
+      return (areaIndex(a) - areaIndex(b)) ||
+             ((parseInt(a.id.slice(1), 10) || 0) - (parseInt(b.id.slice(1), 10) || 0)) ||
+             a.id.localeCompare(b.id);
+    });
+    byId = {};
+    POINTS.forEach(function (p) { byId[p.id] = p; });
+    if (currentId && !byId[currentId]) currentId = null;
+  }
+
+  // ------------------------------------------------------------------ state
+  let db = null;
+  let state = {};        // id -> {title, ctx, rec, refs, flag, status, decision}
+  let comments = [];     // {id, pointIds[], author, text, createdAt}
+  let currentId = null;
+  let activeArea = AREAS[0].key;
+  let areaChosen = false;
+  let query = "";
+  let selMode = false;
+  let selected = new Set();
+  let saveTimer = null;
+
+  const $ = function (id) { return document.getElementById(id); };
+  const esc = function (s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  };
+
+  function statusOf(p) {
+    return (state[p.id] && state[p.id].status) || "open";
+  }
+  function decisionOf(p) {
+    return (state[p.id] && state[p.id].decision) || "";
+  }
+  function commentsFor(id) {
+    return comments.filter(function (c) {
+      return (c.pointIds || []).indexOf(id) !== -1;
+    });
+  }
+
+  function when(ts) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) +
+           " · " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  // ------------------------------------------------------------------- tabs
+  function drawTabs() {
+    const el = $("tabs");
+    el.innerHTML = "";
+    AREAS.forEach(function (a) {
+      const pts = POINTS.filter(function (p) { return p.area === a.key; });
+      const open = pts.filter(function (p) { return statusOf(p) !== "closed"; }).length;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "tab";
+      b.setAttribute("aria-selected", a.key === activeArea ? "true" : "false");
+      b.innerHTML = esc(a.label) + "<i>" + (!pts.length ? "0" : open ? open + "/" + pts.length : "✓") + "</i>";
+      b.addEventListener("click", function () { activeArea = a.key; areaChosen = true; query = ""; $("search").value = ""; drawAll(); });
+      el.appendChild(b);
+    });
+  }
+
+  // ------------------------------------------------------------------- list
+  function visiblePoints() {
+    if (query) {
+      const q = query.toLowerCase();
+      return POINTS.filter(function (p) {
+        return (p.id + " " + p.title + " " + p.ctx + " " + p.rec).toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    return POINTS.filter(function (p) { return p.area === activeArea; });
+  }
+
+  function drawList() {
+    const el = $("items");
+    el.innerHTML = "";
+    if (!POINTS.length) {
+      el.innerHTML = '<div class="empty-list">The log is empty. Every decision is an entry in the <code>points</code> collection, ' +
+        'with an id starting with its area letter (<code>A1</code>, <code>B2</code>…), <code>title</code>, <code>ctx</code>, <code>rec</code> and <code>refs</code>: ' +
+        'it shows up here as soon as it is written.</div>';
+      return;
+    }
+    const pts = visiblePoints();
+    if (!pts.length) {
+      el.innerHTML = '<div class="group-head">' + (query ? 'No entries found' : 'No entries in this area') + '</div>';
+      return;
+    }
+    let lastArea = null;
+    pts.forEach(function (p) {
+      if (query && p.area !== lastArea) {
+        const h = document.createElement("div");
+        h.className = "group-head";
+        const a = AREAS.filter(function (x) { return x.key === p.area; })[0];
+        h.textContent = a ? a.label : p.area;
+        el.appendChild(h);
+        lastArea = p.area;
+      }
+
+      const st = statusOf(p);
+      const n = commentsFor(p.id).length;
+
+      const row = document.createElement("div");
+      row.className = "item" + (p.flag ? " flagged" : "");
+      row.setAttribute("aria-current", p.id === currentId ? "true" : "false");
+
+      const tick = document.createElement("button");
+      tick.type = "button";
+      tick.className = "tick";
+      tick.setAttribute("aria-pressed", selected.has(p.id) ? "true" : "false");
+      tick.setAttribute("aria-label", "Select " + p.id);
+      tick.addEventListener("click", function (e) {
+        e.stopPropagation();
+        if (selected.has(p.id)) selected.delete(p.id); else selected.add(p.id);
+        drawList(); drawSelbar();
+      });
+
+      const idEl = document.createElement("div");
+      idEl.className = "item-id";
+      idEl.textContent = p.id;
+
+      const body = document.createElement("div");
+      body.className = "item-body";
+      body.innerHTML =
+        '<div class="item-title">' + esc(p.title) + '</div>' +
+        '<div class="item-meta"><span class="chip ' + esc(st) + '">' + esc(st) + '</span>' +
+        (n ? '<span class="count">' + n + ' comment' + (n > 1 ? 's' : '') + '</span>' : '') + '</div>';
+
+      row.appendChild(tick);
+      row.appendChild(idEl);
+      row.appendChild(body);
+      row.addEventListener("click", function () {
+        if (selMode) {
+          if (selected.has(p.id)) selected.delete(p.id); else selected.add(p.id);
+          drawList(); drawSelbar();
+          return;
+        }
+        open(p.id);
+      });
+      el.appendChild(row);
+    });
+  }
+
+  function drawMeter() {
+    const total = POINTS.length;
+    const done = POINTS.filter(function (p) { return statusOf(p) === "closed"; }).length;
+    $("meterFill").style.width = (total ? Math.round(done / total * 100) : 0) + "%";
+    $("meterText").textContent = total ? done + " of " + total + " closed" : "no entries";
+  }
+
+  // ----------------------------------------------------------------- detail
+  function open(id) {
+    currentId = id;
+    document.body.classList.add("reading");
+    drawList();
+    drawDetail();
+    $("detail").scrollTop = 0;
+  }
+
+  function drawDetail() {
+    const inner = $("detailInner");
+    if (!currentId || !byId[currentId]) { inner.hidden = true; $("emptyState").hidden = false; return; }
+    $("emptyState").hidden = true;
+    inner.hidden = false;
+
+    const p = byId[currentId];
+    const st = statusOf(p);
+    const area = AREAS.filter(function (a) { return a.key === p.area; })[0];
+    function section(label, cls, body) {
+      if (!body) return "";
+      return '<div class="d-section"><div class="d-label">' + label + '</div><div class="' + cls +
+             ' d-plain">' + esc(body) + '</div></div>';
+    }
+
+    inner.innerHTML =
+      '<button type="button" class="back" id="backBtn">← List</button>' +
+      '<div class="d-eyebrow">' + esc(p.id) + ' · ' + esc(area ? area.label : "") + '</div>' +
+      '<h1 class="d-title">' + esc(p.title) + '</h1>' +
+      (p.flag ? '<div class="d-flag">Structural entry</div>' : '') +
+      section("The issue", "d-prose", p.ctx) +
+      section("Recommendation", "d-rec", p.rec) +
+      (p.refs ? '<div class="d-section"><div class="d-label">References</div><div class="d-refs">' + esc(p.refs) + '</div></div>' : '') +
+      '<div class="statusbar">' +
+        '<span class="d-label" style="margin:0 6px 0 0">Status</span>' +
+        ['open', 'discussion', 'closed'].map(function (s) {
+          return '<button type="button" class="sbtn ' + s + '" data-s="' + s + '" aria-pressed="' +
+                 (st === s ? 'true' : 'false') + '">' + s + '</button>';
+        }).join('') +
+      '</div>' +
+      '<div class="verdict">' +
+        '<div class="d-label">Decision</div>' +
+        '<textarea id="verdict" placeholder="What we decided, and why. It stays here as the minutes.">' +
+        esc(decisionOf(p)) + '</textarea>' +
+        '<div class="saved" id="savedNote"></div>' +
+      '</div>' +
+      '<div class="thread"><div class="d-label">Discussion</div><div id="thread"></div>' +
+        '<div class="composer">' +
+          '<textarea id="newComment" placeholder="Write your comment on this entry here…"></textarea>' +
+          '<div class="composer-row">' +
+            '<button type="button" class="send" id="sendBtn" disabled>Send</button>' +
+            '<span class="hint">⌘↵ to send</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    const back = $("backBtn");
+    if (back) back.addEventListener("click", function () {
+      document.body.classList.remove("reading");
+    });
+
+    inner.querySelectorAll(".sbtn").forEach(function (b) {
+      b.addEventListener("click", function () { setStatus(p.id, b.dataset.s); });
+    });
+
+    const vt = $("verdict");
+    vt.addEventListener("input", function () {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(function () { setDecision(p.id, vt.value); }, 600);
+    });
+
+    const nc = $("newComment");
+    const sb = $("sendBtn");
+    nc.addEventListener("input", function () { sb.disabled = !nc.value.trim(); });
+    nc.addEventListener("keydown", function (e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && nc.value.trim()) send();
+    });
+    sb.addEventListener("click", send);
+    function send() { addComment([p.id], nc.value.trim()); nc.value = ""; sb.disabled = true; }
+
+    drawThread();
+  }
+
+  function drawThread() {
+    const el = $("thread");
+    if (!el) return;
+    const list = commentsFor(currentId).slice().sort(function (a, b) {
+      return (a.createdAt || 0) - (b.createdAt || 0);
+    });
+    if (!list.length) {
+      el.innerHTML = '<div class="hint" style="padding:6px 0 4px">No comments on this entry yet.</div>';
+      return;
+    }
+    el.innerHTML = "";
+    list.forEach(function (c) {
+      const isClaude = c.author === "claude";
+      const others = (c.pointIds || []).filter(function (x) { return x !== currentId; });
+      const m = document.createElement("div");
+      m.className = "msg" + (isClaude ? " claude" : "");
+      m.innerHTML =
+        '<div class="avatar">' + (isClaude ? "C" : "Y") + '</div>' +
+        '<div class="bubble">' +
+          '<div class="bubble-head"><span class="who">' + (isClaude ? "Claude" : "You") + '</span>' +
+          '<span class="when">' + esc(when(c.createdAt)) + '</span>' +
+          '<button type="button" class="del" data-id="' + esc(c.id) + '" title="Delete">✕</button></div>' +
+          '<div class="bubble-text">' + esc(c.text) + '</div>' +
+          (others.length ? '<div class="also">also on: ' + others.map(function (o) {
+            return '<b data-goto="' + esc(o) + '">' + esc(o) + '</b>';
+          }).join(" ") + '</div>' : '') +
+        '</div>';
+      el.appendChild(m);
+    });
+    el.querySelectorAll(".del").forEach(function (b) {
+      b.addEventListener("click", function () { removeComment(b.dataset.id); });
+    });
+    el.querySelectorAll("[data-goto]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        const t = byId[b.dataset.goto];
+        if (t) { activeArea = t.area; areaChosen = true; query = ""; $("search").value = ""; drawTabs(); open(t.id); }
+      });
+    });
+  }
+
+  // ----------------------------------------------------------------- selbar
+  function drawSelbar() {
+    const n = selected.size;
+    $("selN").textContent = n === 1 ? "1 entry" : n + " entries";
+    $("selGo").disabled = n === 0;
+  }
+
+  // ------------------------------------------------------------------ write
+  // `update`, not `set`: the entry's title, context and references stay.
+  function setStatus(id, s) {
+    state[id] = Object.assign({}, state[id], { status: s });
+    drawAll();
+    if (db) db.doc("points/" + id).update({ status: s, updatedAt: Date.now() }).catch(function () {});
+  }
+
+  function setDecision(id, text) {
+    state[id] = Object.assign({}, state[id], { decision: text });
+    const n = $("savedNote");
+    if (n) { n.textContent = "Saved"; setTimeout(function () { if (n) n.textContent = ""; }, 1600); }
+    if (db) db.doc("points/" + id).update({ decision: text, updatedAt: Date.now() }).catch(function () {});
+  }
+
+  function addComment(ids, text) {
+    if (!text) return;
+    const body = { pointIds: ids, author: "you", text: text, createdAt: Date.now() };
+    if (db) {
+      db.collection("comments").add(body).catch(function () {
+        comments.push(Object.assign({ id: "l" + body.createdAt }, body));
+        drawAll(); drawThread();
+      });
+    } else {
+      comments.push(Object.assign({ id: "l" + body.createdAt }, body));
+      drawAll(); drawThread();
+    }
+  }
+
+  function removeComment(id) {
+    if (db) { db.doc("comments/" + id).delete().catch(function () {}); return; }
+    comments = comments.filter(function (c) { return c.id !== id; });
+    drawAll(); drawThread();
+  }
+
+  // ------------------------------------------------------------------- draw
+  function drawAll() {
+    drawTabs(); drawList(); drawMeter();
+    if (currentId) drawDetail();
+  }
+
+  // ---------------------------------------------------------------- events
+  $("search").addEventListener("input", function (e) {
+    query = e.target.value.trim();
+    drawList();
+  });
+
+  $("pickBtn").addEventListener("click", function () {
+    selMode = !selMode;
+    document.body.classList.toggle("selmode", selMode);
+    this.setAttribute("aria-pressed", selMode ? "true" : "false");
+    if (!selMode) selected.clear();
+    drawList(); drawSelbar();
+  });
+
+  $("selOff").addEventListener("click", function () {
+    selMode = false; selected.clear();
+    document.body.classList.remove("selmode");
+    $("pickBtn").setAttribute("aria-pressed", "false");
+    drawList();
+  });
+
+  $("selGo").addEventListener("click", function () {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+
+    // Opens the first entry and rededicates the composer to the group. The button is
+    // replaced with a clone to detach the single-entry listener that
+    // drawDetail() has just attached: without this the click posts twice.
+    open(ids[0]);
+    const nc = $("newComment");
+    nc.placeholder = "Comment on " + ids.length + " entries: " + ids.join(", ");
+    nc.focus();
+
+    const old = $("sendBtn");
+    const sb = old.cloneNode(false);
+    sb.textContent = "Send to " + ids.length + " entries";
+    sb.disabled = !nc.value.trim();
+    old.replaceWith(sb);
+
+    nc.oninput = function () { sb.disabled = !nc.value.trim(); };
+    nc.onkeydown = function (e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && nc.value.trim()) sb.click();
+    };
+    sb.addEventListener("click", function () {
+      const t = nc.value.trim();
+      if (!t) return;
+      addComment(ids, t);
+      nc.value = ""; sb.disabled = true;
+      selMode = false; selected.clear();
+      document.body.classList.remove("selmode");
+      $("pickBtn").setAttribute("aria-pressed", "false");
+      drawAll();
+    });
+  });
+
+  // ------------------------------------------------------------- bootstrap
+  drawAll();
+  drawSelbar();
+
+  (async function connect() {
+    let store = null;
+    try { store = await window.claude?.use?.("db"); } catch (e) { store = null; }
+
+    if (!store) {
+      $("syncText").textContent = "Log unreachable";
+      return;
+    }
+    db = store;
+    $("syncDot").classList.remove("off");
+    $("syncText").textContent = "Synced";
+
+    db.collection("points").onSnapshot(function (snap) {
+      const next = {};
+      snap.docs.forEach(function (d) { next[d.id] = d.data(); });
+      state = next;
+      buildPoints();
+      // On first load, opens the first area that has entries.
+      if (!areaChosen && POINTS.length && !POINTS.some(function (p) { return p.area === activeArea; })) {
+        activeArea = POINTS[0].area;
+      }
+      drawAll();
+    }, function () {
+      $("syncDot").classList.add("off");
+      $("syncText").textContent = "Sync interrupted";
+    });
+
+    db.collection("comments").orderBy("createdAt").onSnapshot(function (snap) {
+      comments = snap.docs.map(function (d) { return Object.assign({ id: d.id }, d.data()); });
+      drawAll();
+      drawThread();
+    }, function () {});
+  })();
+})();
+</script>
+
