@@ -2,7 +2,11 @@
 
 **A review-and-build workflow for Claude Code: one reviewing session, several coding sessions in separate clones, and hooks that enforce the rules.**
 
-<!-- TODO: add docs/img/lanes-panel.png (screenshot of the /lanes-status panel with three lanes: one working, one "to clean", one waiting for the lock), taken on a throwaway project) -->
+![The line above the prompt](docs/img/lanes-line.png)
+
+![The lanes panel](docs/img/lanes-panel.png)
+
+*The line above the prompt and the panel opened by `/lanes-status`. Illustration with invented data, drawn with the mod's own texts.*
 
 *Repository: `claude-lanes`. Plugin name: `metodo`.*
 
