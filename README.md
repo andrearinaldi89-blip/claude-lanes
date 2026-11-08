@@ -2,7 +2,7 @@
 
 **A review-and-build workflow for Claude Code: one reviewing session, several coding sessions in separate clones, and hooks that enforce the rules.**
 
-<!-- TODO: add docs/img/lanes-panel.png (screenshot of the /lanes panel with three lanes: one working, one "to clean", one waiting for the lock), taken on a throwaway project) -->
+<!-- TODO: add docs/img/lanes-panel.png (screenshot of the /lanes-status panel with three lanes: one working, one "to clean", one waiting for the lock), taken on a throwaway project) -->
 
 *Repository: `claude-lanes`. Plugin name: `metodo`.*
 
@@ -19,7 +19,7 @@
 | **Guard** (`hooks/guard.py`, PreToolUse) | Blocks the commands you would regret: editing an already-applied migration, a `docker compose` that deletes volumes without naming its project, protected volumes, `prune -a`, a release from outside the main folder, a `git push` from a clone. |
 | **Delivery gate** (`hooks/delivery.py`, Stop) | A «Delivery of…» report from a clone does not go out without the `delivery-check` sub-agent having run and the «Done» written. |
 | **Start-up orientation** (`hooks/startup.sh`, SessionStart) | Prints branch, commit, tree state and distance from `origin/main` when a coding session opens. |
-| **Lanes panel** (`/lanes`, status line) | One line above the prompt, and a panel: what each lane is doing, who holds the end-to-end lock, which sessions are to clean. |
+| **Lanes panel** (`/lanes-status`, status line) | One line above the prompt, and a panel: what each lane is doing, who holds the end-to-end lock, which sessions are to clean. |
 | **Close-out cleanup** (`scripts/cleanup.sh`) | After a merge, deletes merged branches and the bench copies, containers, volumes and images of that job, found by name. Never touches protected things. |
 | **Handoff protocol** (`metodo:handoffs`) | Prompt → Plan → Delivery → Close-out, between a reviewing session and a coding session, as messages with a recognizable first line. |
 | **Decision log** (optional) | A record of the *why* of each decision, so sessions stop reopening settled choices. See below. |
@@ -52,7 +52,7 @@ The plugin acts only in projects that have a `.claude/metodo.json`.
 | `scripts/cleanup.sh` | `git`, `docker`; `lockf` (macOS) with fallback to `flock` | yes | yes |
 | `delivery-check` sub-agent | plugin sub-agents | yes | yes |
 | **Messages between sessions** (`SendMessage`, `list_sessions`, `start_session`) | **Claude Code desktop** | no | no |
-| **Lanes mod** (status line, `/lanes`, panel, auto `/clear`, dirty-session refusal) | Claude Code's mod API (not stable); the panel is desktop-only | to be verified | only if the desktop app runs |
+| **Lanes mod** (status line, `/lanes-status`, panel, auto `/clear`, dirty-session refusal) | Claude Code's mod API (not stable); the panel is desktop-only | to be verified | only if the desktop app runs |
 | **Wake-up** of a coding session closed by the app | the desktop app's log (format not documented, may change) | no | no |
 
 Two levels, then: the **core** (hooks, skills, templates, scripts) works in a terminal and on Linux, because it is hooks, files and git. The **coordination between sessions** needs Claude Code desktop and, for now, macOS. The mod uses unstable APIs and may break with a Claude Code update.

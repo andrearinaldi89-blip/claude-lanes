@@ -93,7 +93,7 @@ const output = (stdout: string) => ({
 // What every test needs: the home, the mod's registrations and an in-memory store.
 function base(on: On, store: Record<string, unknown> = {}) {
   on('env.get', environment)
-  on('command.register', () => ({ value: { command: 'lanes' } }))
+  on('command.register', () => ({ value: { command: 'lanes-status' } }))
   on('tool.register', () => ({ value: { tool: 'mcp__metodo__status' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   mock.store(on, store)
@@ -120,7 +120,7 @@ const PANE = {
   },
 } as const
 
-const lanes = (args = '', command = 'lanes') =>
+const lanes = (args = '', command = 'lanes-status') =>
   ({ command, args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 100 } }) as const
 
 test('normalize: English fields win over the Italian aliases, which still work alone', () => {
@@ -144,7 +144,7 @@ test('normalize: English fields win over the Italian aliases, which still work a
   expect(normalize('nope')).toBeNull()
 })
 
-test('the line, the panel and /lanes say where each lane stands', async ($, on) => {
+test('the line, the panel and /lanes-status say where each lane stands', async ($, on) => {
   base(on)
   on('clock.now', () => ({ value: NOW }))
   on('clock.every', () => ({ value: undefined }))
@@ -206,7 +206,7 @@ test('the line, the panel and /lanes say where each lane stands', async ($, on) 
   }
 })
 
-test('from a chat outside the projects, /lanes lists all of them, or the one named, and nothing above the prompt', async ($, on) => {
+test('from a chat outside the projects, /lanes-status lists all of them, or the one named, and nothing above the prompt', async ($, on) => {
   base(on, { projects: [MAIN, '/Users/me/code/beta', '/Users/me/code/gone'] })
   on('clock.now', () => ({ value: NOW }))
   on('clock.every', () => ({ value: undefined }))
@@ -249,7 +249,7 @@ test('from a chat outside the projects, /lanes lists all of them, or the one nam
 test('a session in the main folder adds the project to those seen; a copy outside the main folder does not', async ($, on) => {
   const store: Record<string, unknown> = {}
   on('env.get', environment)
-  on('command.register', () => ({ value: { command: 'lanes' } }))
+  on('command.register', () => ({ value: { command: 'lanes-status' } }))
   on('tool.register', () => ({ value: { tool: 'mcp__metodo__status' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('store.get', (_, e) => ({ value: store[e.key] }))

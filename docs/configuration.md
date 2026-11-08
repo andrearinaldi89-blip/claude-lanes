@@ -4,7 +4,7 @@
 
 | Field | What it says |
 |---|---|
-| `name` | the project name, as shown by `/lanes` and notifications |
+| `name` | the project name, as shown by `/lanes-status` and notifications |
 | `prefix` | the prefix of everything a job creates (bench folders, clones, Docker projects): short, lowercase, no other project's |
 | `root` | the main folder |
 | `model` | the model of the coding sessions, which `clones.sh` writes into the clones; if unset, `claude-sonnet-5-5` |

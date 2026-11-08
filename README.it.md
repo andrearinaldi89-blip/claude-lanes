@@ -12,7 +12,7 @@ Traduzione breve del [README inglese](README.md), che è il testo di riferimento
 
 ## Che cosa dà
 
-La guardia (comandi che si rimpiangono), il controllo della consegna, l'orientamento all'avvio, il pannello dei binari (`/lanes`), la pulizia di chiusura, il protocollo dei passaggi (Prompt → Piano → Consegna → Chiusura) e, in più e a scelta, un registro delle decisioni che conserva il *perché*.
+La guardia (comandi che si rimpiangono), il controllo della consegna, l'orientamento all'avvio, il pannello dei binari (`/lanes-status`), la pulizia di chiusura, il protocollo dei passaggi (Prompt → Piano → Consegna → Chiusura) e, in più e a scelta, un registro delle decisioni che conserva il *perché*.
 
 ## Installazione
 

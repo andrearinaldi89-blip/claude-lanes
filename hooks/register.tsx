@@ -32,7 +32,7 @@ let home = ''
 const latest = new Map<string, State>()
 // The session's project, if it is in its main folder or in one of its clones.
 let myProject: Project | null = null
-// The projects that the line, the panel and the timer follow: the session's, or those asked of /lanes.
+// The projects that the line, the panel and the timer follow: the session's, or those asked of /lanes-status.
 let followed: Project[] = []
 // The lane this is the coding session of, if it is one.
 let mine: string | null = null
@@ -192,7 +192,7 @@ async function findProject($: EngineInterface, cwd: string): Promise<Project | n
   return null
 }
 
-// The projects seen by this mod, in every session: /lanes shows them even from any chat.
+// The projects seen by this mod, in every session: /lanes-status shows them even from any chat.
 async function allProjects($: EngineInterface): Promise<Project[]> {
   const seen = ((await $.store.get('projects')) as string[] | undefined) ?? []
   const read = await Promise.all(seen.map(dir => readConfiguration($, dir)))
@@ -744,7 +744,7 @@ function summary(s: State): string {
   return lines.join('\n')
 }
 
-// The text of /lanes and of the tool: the projects asked for, one after the other.
+// The text of /lanes-status and of the tool: the projects asked for, one after the other.
 async function tell($: EngineInterface, asked: string): Promise<string> {
   const projects = await choose($, asked)
   if (projects.length === 0)
@@ -785,16 +785,21 @@ export const register: Register = on => {
     // A new session in the clone starts clean; the same one, reloaded, stays as it was.
     await annotate($, a => (mine !== null && a.session !== session ? { ...a, session, dirty: false } : { ...a, session }))
     const description = "The state of the lanes: of the session's project, or of the one named, or of all"
-    await $.command.register({ name: 'lanes', description, argumentHint: '[project]' })
-    // Legacy alias.
-    await $.command.register({ name: 'binari', description, argumentHint: '[project]' })
+    // A command named like a skill of the plugin is refused by Claude Code: never let that stop the rest of the start-up.
+    for (const name of ['lanes-status', 'binari']) {
+      try {
+        await $.command.register({ name, description, argumentHint: '[project]' })
+      } catch {
+        // refused: the line, the panel and the tool still work
+      }
+    }
     if (myProject !== null) {
       await remember($, myProject)
       follow($, [myProject])
     }
     const tool = {
       description:
-        "The state of the lanes of the projects that use metodo: the same text as /lanes. Call it when the owner asks about the lanes, and report its text as is: from Remote Control the line above the prompt and the mod's panel are not visible, nor is the output of /lanes. Without `project` it reports the session's project, or all of them if the session does not belong to a project.",
+        "The state of the lanes of the projects that use metodo: the same text as /lanes-status. Call it when the owner asks about the lanes, and report its text as is: from Remote Control the line above the prompt and the mod's panel are not visible, nor is the output of /lanes-status. Without `project` it reports the session's project, or all of them if the session does not belong to a project.",
       inputSchema: {
         type: 'object' as const,
         properties: { project: { type: 'string', description: 'The name or prefix of the project, for example «Acme» or «acme»' } },
@@ -810,7 +815,7 @@ export const register: Register = on => {
   on('tool.call', { tool: 'mcp__metodo__status' }, statusTool)
   on('tool.call', { tool: 'mcp__metodo__stato' }, statusTool)
 
-  on('command.run', { command: 'lanes' }, lanesCommand)
+  on('command.run', { command: 'lanes-status' }, lanesCommand)
   on('command.run', { command: 'binari' }, lanesCommand)
 
   // In every session of a project, when it works and when it stops; in the coding session, the messages too.
