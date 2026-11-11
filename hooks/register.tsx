@@ -28,6 +28,9 @@ const PANEL = 'lanes'
 const EVERY_MS = 30_000
 
 let home = ''
+// The folder the mod has oriented itself on: the app starts sessions in a spare folder
+// (~/.claude/spares/…) and moves them into the project afterwards, without another session.start.
+let seenCwd: string | null = null
 // The latest reads, by main folder: everything is re-read every 30 s, so reloading the mod loses nothing.
 const latest = new Map<string, State>()
 // The session's project, if it is in its main folder or in one of its clones.
@@ -226,6 +229,66 @@ function annotate($: EngineInterface, change: (a: Annotation, now: number) => An
       await $.fs.write(file, JSON.stringify(next))
     })
     .catch(() => {}))
+}
+
+// The conversation's id: a /clear changes it, a session the app resumes keeps it.
+async function conversationOf($: EngineInterface): Promise<string | undefined> {
+  try {
+    return (await $.session.id()) || undefined
+  } catch {
+    return undefined
+  }
+}
+
+// Which project and which lane the session belongs to, and where it notes.
+async function orient($: EngineInterface, cwd: string) {
+  seenCwd = cwd
+  myProject = await findProject($, cwd)
+  mine = myProject && laneOf(myProject, cwd)
+  // The id that messages between sessions carry in their «from».
+  const session = (await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')) ?? (await $.session.id())
+  const conversation = mine === null ? undefined : await conversationOf($)
+  myFile = myProject === null ? null : mine !== null ? annotationFile(myProject, mine) : `${reviewsDir(myProject)}/${session}.json`
+  // A new session in the clone starts clean, and so does a new conversation in the same session:
+  // a /clear from the app on a session it had closed never reaches session.end, because no process
+  // is there to hear it. The same conversation, reloaded or resumed, stays as it was.
+  await annotate($, a => {
+    const another = a.conversation !== undefined && conversation !== undefined && a.conversation !== conversation
+    const isNew = mine !== null && (a.session !== session || another)
+    return { ...a, session, ...(isNew ? { dirty: false } : {}), ...(conversation !== undefined ? { conversation } : {}) }
+  })
+  if (myProject !== null) {
+    await remember($, myProject)
+    follow($, [myProject])
+  }
+}
+
+// The session changed folder after it started: orient again.
+async function reorient($: EngineInterface) {
+  let cwd: string | null = null
+  try {
+    cwd = await $.session.cwd()
+  } catch {
+    return
+  }
+  if (cwd && cwd !== seenCwd) await orient($, cwd)
+}
+
+// A message from another session that reached the coding session. The one that reopens a session
+// the app had closed arrives as the first prompt, without session.receive: turn.start sees it,
+// and one already noted is not noted twice.
+async function received($: EngineInterface, text: string) {
+  const m = readMessage(text)
+  closedOut = CLOSEOUT.test(m.line)
+  await annotate($, (a, now) =>
+    a.handoff?.direction === 'in' && a.handoff.text === m.line && a.handoff.peer === m.peer
+      ? a
+      : {
+          ...a,
+          senders: m.from ? { ...a.senders, [m.from]: m.peer } : a.senders,
+          handoff: { direction: 'in', text: m.line, peer: m.peer, at: now },
+        },
+  )
 }
 
 function annotateActivity($: EngineInterface, activity: Activity) {
@@ -757,13 +820,16 @@ async function tell($: EngineInterface, asked: string): Promise<string> {
 }
 
 // The same text for the model: on Remote Control only its reply arrives.
-async function statusTool($: EngineInterface, e: { input: unknown }) {
-  const input = e.input as { project?: unknown; progetto?: unknown }
+// The tool's arguments sit beside `tool`, not under `input`.
+async function statusTool($: EngineInterface, e: unknown) {
+  const input = e as { project?: unknown; progetto?: unknown }
   const project = input.project ?? input.progetto
+  await reorient($)
   return { result: await tell($, typeof project === 'string' ? project : '') }
 }
 
 async function lanesCommand($: EngineInterface, e: { args: string }) {
+  await reorient($)
   const text = await tell($, e.args)
   void $.ui.open({ id: PANEL, title: 'Lanes' })
   return { text }
@@ -772,18 +838,7 @@ async function lanesCommand($: EngineInterface, e: { args: string }) {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     home = (await $.env.get('HOME')) ?? ''
-    myProject = await findProject($, e.cwd)
-    mine = myProject && laneOf(myProject, e.cwd)
-    // The id that messages between sessions carry in their «from».
-    const session = (await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')) ?? (await $.session.id())
-    myFile =
-      myProject === null
-        ? null
-        : mine !== null
-          ? annotationFile(myProject, mine)
-          : `${reviewsDir(myProject)}/${session}.json`
-    // A new session in the clone starts clean; the same one, reloaded, stays as it was.
-    await annotate($, a => (mine !== null && a.session !== session ? { ...a, session, dirty: false } : { ...a, session }))
+    await orient($, e.cwd)
     const description = "The state of the lanes: of the session's project, or of the one named, or of all"
     // A command named like a skill of the plugin is refused by Claude Code: never let that stop the rest of the start-up.
     for (const name of ['lanes-status', 'binari']) {
@@ -792,10 +847,6 @@ export const register: Register = on => {
       } catch {
         // refused: the line, the panel and the tool still work
       }
-    }
-    if (myProject !== null) {
-      await remember($, myProject)
-      follow($, [myProject])
     }
     const tool = {
       description:
@@ -820,9 +871,14 @@ export const register: Register = on => {
 
   // In every session of a project, when it works and when it stops; in the coding session, the messages too.
   on('turn.start', async ($, e, next) => {
+    if (e.agentId === undefined) await reorient($)
     if (myFile !== null && e.agentId === undefined) annotateActivity($, 'working')
-    // Written before the turn starts: the reviewer that sends the prompt afterwards must find it.
-    if (mine !== null && e.agentId === undefined) await annotate($, a => ({ ...a, dirty: true }))
+    if (mine !== null && e.agentId === undefined) {
+      if (e.text.includes('<cross-session-message')) await received($, e.text)
+      const conversation = await conversationOf($)
+      // Written before the turn starts: the reviewer that sends the prompt afterwards must find it.
+      await annotate($, a => ({ ...a, dirty: true, ...(conversation !== undefined ? { conversation } : {}) }))
+    }
     return next(e)
   })
 
@@ -866,19 +922,14 @@ export const register: Register = on => {
 
   on('session.receive', async ($, e, next) => {
     const fromASession = e.origin.kind === 'peer' || e.origin.kind === 'peer-send-message'
-    if (mine !== null && e.agentId === undefined && fromASession) {
-      const m = readMessage(e.text)
-      closedOut = CLOSEOUT.test(m.line)
-      await annotate($, (a, now) => ({
-        ...a,
-        senders: m.from ? { ...a.senders, [m.from]: m.peer } : a.senders,
-        handoff: { direction: 'in', text: m.line, peer: m.peer, at: now },
-      }))
-    } else if (e.agentId === undefined && fromASession) await exchange($, readMessage(e.text).from)
+    if (e.agentId === undefined && fromASession) await reorient($)
+    if (mine !== null && e.agentId === undefined && fromASession) await received($, e.text)
+    else if (e.agentId === undefined && fromASession) await exchange($, readMessage(e.text).from)
     return next(e)
   })
 
   on('session.send', async ($, e, next) => {
+    if (e.agentId === undefined) await reorient($)
     if (mine !== null && e.agentId === undefined) {
       const line = readMessage(e.text).line
       await annotate($, (a, now) => ({

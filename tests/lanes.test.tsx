@@ -183,7 +183,7 @@ test('the line, the panel and /lanes-status say where each lane stands', async (
 
   // The same text, for the model that answers from Remote Control, under the new and the legacy tool name.
   for (const tool of ['mcp__metodo__status', 'mcp__metodo__stato']) {
-    const result = await $.tool.call({ tool, input: {} })
+    const result = await $.tool.call({ tool })
     expect('result' in result ? result.result : undefined).toBe(command.text)
   }
 
@@ -228,13 +228,13 @@ test('from a chat outside the projects, /lanes-status lists all of them, or the 
   expect(all.text).toContain('Development · free · · no session seen\n\nFixes')
   expect(all.text?.split('E2E free')).toHaveLength(2)
 
-  const beta = await $.tool.call({ tool: 'mcp__metodo__status', input: { project: 'beta' } })
+  const beta = await $.tool.call({ tool: 'mcp__metodo__status', project: 'beta' })
   const text = 'result' in beta ? String(beta.result) : ''
   expect(text).toContain('Lanes of Beta at')
   expect(text).not.toContain('Acme')
 
   // The legacy input name still works.
-  const legacy = await $.tool.call({ tool: 'mcp__metodo__stato', input: { progetto: 'beta' } })
+  const legacy = await $.tool.call({ tool: 'mcp__metodo__stato', progetto: 'beta' })
   expect('result' in legacy ? String(legacy.result) : '').toContain('Lanes of Beta at')
 
   const none = await $.command.run(lanes('Nothing'))
@@ -706,4 +706,94 @@ test('the coding session closed by the app while the work is in its hands wakes 
     await $.command.run(lanes())
     expect(sent).toHaveLength(1)
   }
+})
+
+// The app closes idle sessions, and the message that reopens one arrives as the first prompt of
+// the new process, without session.receive.
+test('the close-out that reopens the coding session arrives with the first turn, and still cleans it', async ($, on) => {
+  const fixes = `${BENCH}/state/fixes.json`
+  const file = new Map<string, string>()
+  const clock = mock.clock(on, { now: NOW })
+  const cleaned: string[] = []
+  base(on)
+  on('command.run', { command: 'clear' }, (_, e) => {
+    cleaned.push(e.command)
+    return { text: '' }
+  })
+  on('process.run', () => output(''))
+  on('fs.read', (_, e) => ({ value: configuration(e.path) ?? file.get(e.path) ?? '' }))
+  on('fs.write', (_, e) => {
+    file.set(e.path, e.text)
+    return { value: undefined }
+  })
+  on('turn.start', (_, e) => ({ turnId: e.turnId }))
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+
+  await $.session.start({ cwd: `${CLONES}/acme-fixes`, surface: 'desktop', isInteractive: true })
+  await $.turn.start({
+    text: 'Another Claude session sent a message:\n<cross-session-message from="local_1" name="Reviewer">\nClose-out of C-12: merged to main.',
+    turnId: 't',
+  })
+  expect(JSON.parse(file.get(fixes) ?? '{}').handoff).toEqual({
+    direction: 'in',
+    text: 'Close-out of C-12: merged to main.',
+    peer: 'Reviewer',
+    at: NOW,
+  })
+  await $.turn.complete({ reason: 'answer', answer: 'Understood.', durationMs: 1, isAborted: false, turnId: 't' })
+  await clock.advance(1000)
+  expect(cleaned).toEqual(['clear'])
+})
+
+// A /clear from the app on a session it had closed: no process hears session.end, and the next
+// process has the same session id and another conversation.
+test('a new conversation in the same coding session is clean; the same one, resumed, stays dirty', async ($, on) => {
+  const fixes = `${BENCH}/state/fixes.json`
+  const file = new Map([[fixes, '{"session":"local_9","dirty":true,"conversation":"c1"}']])
+  let conversation = 'c1'
+  base(on)
+  on('session.id', () => ({ value: conversation }))
+  on('clock.now', () => ({ value: NOW }))
+  on('clock.every', () => ({ value: undefined }))
+  on('process.run', () => output(''))
+  on('fs.read', (_, e) => ({ value: configuration(e.path) ?? file.get(e.path) ?? '' }))
+  on('fs.write', (_, e) => {
+    file.set(e.path, e.text)
+    return { value: undefined }
+  })
+  const dirty = () => JSON.parse(file.get(fixes) ?? '{}').dirty
+
+  await $.session.start({ cwd: `${CLONES}/acme-fixes`, surface: 'desktop', isInteractive: true })
+  expect(dirty()).toBe(true)
+  conversation = 'c2'
+  await $.session.start({ cwd: `${CLONES}/acme-fixes`, surface: 'desktop', isInteractive: true })
+  expect(dirty()).toBe(false)
+  expect(JSON.parse(file.get(fixes) ?? '{}').conversation).toBe('c2')
+})
+
+// The app starts sessions in a spare folder and moves them into the project afterwards.
+test('a session started in a spare folder orients itself once it is in the clone', async ($, on) => {
+  const fixes = `${BENCH}/state/fixes.json`
+  const file = new Map<string, string>()
+  let cwd = '/Users/me/.claude/spares/spare-1'
+  base(on)
+  on('session.cwd', () => ({ value: cwd }))
+  on('clock.now', () => ({ value: NOW }))
+  on('clock.every', () => ({ value: undefined }))
+  on('process.run', () => output(''))
+  on('fs.read', (_, e) => ({ value: configuration(e.path) ?? file.get(e.path) ?? '' }))
+  on('fs.write', (_, e) => {
+    file.set(e.path, e.text)
+    return { value: undefined }
+  })
+  on('turn.start', (_, e) => ({ turnId: e.turnId }))
+
+  await $.session.start({ cwd, surface: 'desktop', isInteractive: true })
+  expect(file.size).toBe(0)
+  cwd = `${CLONES}/acme-fixes`
+  await $.turn.start({ text: 'Prompt for C-12', turnId: 't' })
+  const a = JSON.parse(file.get(fixes) ?? '{}')
+  expect(a.session).toBe('local_9')
+  expect(a.dirty).toBe(true)
+  expect(a.activity).toBe('working')
 })

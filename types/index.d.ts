@@ -51,6 +51,8 @@ export type Annotation = {
   // Of the coding session: the conversation already has a turn and has not been cleaned since.
   // Absent until the mod has seen it: then nobody knows, and nothing is blocked.
   dirty?: boolean
+  // Of the coding session: the conversation's id, which a /clear changes.
+  conversation?: string
   // Of the reviewer: the lane of its last thing, a message or a job, and the job.
   lane?: string
   what?: string
