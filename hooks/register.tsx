@@ -63,7 +63,8 @@ const inside = (path: string, dir: string) => path === dir || path.startsWith(`$
 const folder = (p: Project, id: string) => `${p.root}/${p.clones}/${p.prefix}-${id}`
 const annotationFile = (p: Project, id: string) => `${p.bench}/state/${id}.json`
 const cloudFile = (p: Project) => `${p.bench}/state/cloud.json`
-// In the cloud the prompt and the clarifications live on the job's branch (metodo:handoffs, «In the cloud»).
+// In the cloud the prompt and the clarifications live on the job's branch (metodo:handoffs, «In the cloud»),
+// in `docs.handoffs` of the configuration or, without it, here.
 const HANDOFFS = 'docs/handoffs'
 const reviewsDir = (p: Project) => `${p.bench}/state/reviews`
 const laneName = (p: Project, id: string) => p.lanes.find(l => l.id === id)?.name ?? id
@@ -169,8 +170,10 @@ export function normalize(raw: unknown): Configuration | null {
     config.docs = {
       ...(typeof raw.docs.blocks === 'string' ? { blocks: raw.docs.blocks } : {}),
       ...(typeof raw.docs.corrections === 'string' ? { corrections: raw.docs.corrections } : {}),
+      ...(typeof raw.docs.handoffs === 'string' ? { handoffs: raw.docs.handoffs } : {}),
     }
   }
+  if (typeof raw.repository === 'string') config.repository = raw.repository
   return config
 }
 
@@ -190,6 +193,7 @@ function projectFrom(c: Configuration, checkout?: string): Project {
     bench: expand(c.bench),
     lock: expand(c.lock),
     jobs: c.jobs ?? {},
+    handoffs: (c.docs?.handoffs ?? HANDOFFS).replace(/\/+$/, ''),
   }
 }
 
@@ -499,7 +503,7 @@ function reviewOf(id: string, annotation: Annotation, all: Annotation[]): Review
 // The folder name may have zero-padded numbers, cp06 for the branch dev/cp6, or not.
 // Without a title on the first line, the title is that of the checkpoint's section in the document
 // the prompt names, read in the clone.
-// In the cloud the prompt is read on the job's branch, in docs/handoffs/<lane>/<job>/prompt.md,
+// In the cloud the prompt is read on the job's branch, in <handoffs>/<lane>/<job>/prompt.md,
 // and so is the document it names.
 type Reader = { prompt: (folder: string) => Promise<string>; document: (path: string) => Promise<string> }
 
@@ -509,7 +513,7 @@ const benchReader = ($: EngineInterface, p: Project, id: string, dir: string): R
 })
 
 const branchReader = ($: EngineInterface, p: Project, id: string, ref: string): Reader => ({
-  prompt: name => run($, ['git', '-C', p.root, 'show', `${ref}:${HANDOFFS}/${id}/${name}/prompt.md`]),
+  prompt: name => run($, ['git', '-C', p.root, 'show', `${ref}:${p.handoffs}/${id}/${name}/prompt.md`]),
   document: path => run($, ['git', '-C', p.root, 'show', `${ref}:${path}`]),
 })
 

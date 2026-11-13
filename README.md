@@ -40,7 +40,7 @@ The plugin acts only in projects that have a `.claude/metodo.json`.
 
 ## Adopt it in a project
 
-1. Copy [`templates/metodo.json`](templates/metodo.json) to `.claude/metodo.json` and fill it in ([fields](docs/configuration.md)). The prefix is short, lowercase and no other project's.
+1. Copy [`templates/metodo.json`](templates/metodo.json) to `.claude/metodo.json` and fill it in ([fields](docs/configuration.md)). The prefix is short, lowercase and no other project's. The same file serves the cloud: there `root` and `clones` are not used, and `repository` and `docs.handoffs` say where the coding sessions are opened and where their prompts go.
 2. In the project's `CLAUDE.md`, right after the title, import the method from where the plugin is installed: `@<path-to-plugin>/METHOD.md`. Claude Code asks once to approve the external import; approve it.
 3. From the main folder, run `<path-to-plugin>/scripts/clones.sh`: it creates one clone per lane inside the main folder and keeps the main `CLAUDE.md` out of them.
 4. Create `docs/blocks/` from [`templates/block.md`](templates/block.md) and `docs/corrections.md`. If the project has an interface, add `docs/DESIGN.md` from [`templates/DESIGN.md`](templates/DESIGN.md).
