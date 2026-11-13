@@ -229,6 +229,17 @@ class GuardCloud(unittest.TestCase):
         # a new session takes the new job
         self.assertEqual(self.send("session_b", "Prompt for C-13")[0], 0)
 
+    def test_it_notes_the_branch_and_the_archive_for_the_lanes_mod(self):
+        self.send("session_a", "Prompt for checkpoint 12\nThe prompt is docs/handoffs/dev/cp12/prompt.md on branch dev/cp12, from abc123.")
+        self.send("session_a", "## Close-out of checkpoint 12")
+        self.call(self.ARCHIVE, {"session_id": "session_a"}, self.main, "PostToolUse")
+        with open(os.path.join(self.tmp.name, ".cache", "acme-review", "state", "cloud.json")) as f:
+            seen = json.load(f)["session_a"]
+        self.assertEqual(seen["branch"], "dev/cp12")
+        self.assertEqual(seen["prompt"], "Prompt for checkpoint 12")
+        self.assertEqual(seen["last"], "Close-out of checkpoint 12")
+        self.assertTrue(seen["archived"])
+
     def test_an_undelivered_prompt_is_not_counted(self):
         self.assertEqual(self.send("session_a", "Prompt for C-12", delivered=False)[0], 0)
         self.assertEqual(self.send("session_a", "Prompt for C-12")[0], 0)

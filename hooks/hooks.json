@@ -16,7 +16,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "mcp__claude-code-remote__send_message",
+        "matcher": "mcp__claude-code-remote__send_message|mcp__claude-code-remote__archive_session",
         "hooks": [
           {
             "type": "command",

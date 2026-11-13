@@ -797,3 +797,100 @@ test('a session started in a spare folder orients itself once it is in the clone
   expect(a.dirty).toBe(true)
   expect(a.activity).toBe('working')
 })
+
+// In the cloud: the session's checkout is the project, whatever `root` says; the lanes come from
+// the branches on origin and the sessions from what the guard notes in cloud.json.
+const CHECKOUT = '/home/user/acme'
+const CLOUD_BENCH = '/root/.cache/acme-review'
+const inTheCloud = (_: unknown, e: { name: string }) => ({
+  value: e.name === 'HOME' ? '/root' : e.name === 'CLAUDE_CODE_REMOTE' ? 'true' : 'session_r',
+})
+const CLOUD_SESSIONS = JSON.stringify({
+  session_d: { prompt: 'Prompt for checkpoint 16', last: 'Ok for the plan of checkpoint 16', at: (NOW - 5 * 60_000) / 1000, branch: 'dev/cp16' },
+  session_f: { prompt: 'Prompt for C-12', last: 'Close-out of C-12', at: (NOW - 60_000) / 1000, branch: 'fix/C-12' },
+  session_o: { prompt: 'Prompt for C-11', last: 'Close-out of C-11', at: (NOW - 3600_000) / 1000, branch: 'fix/C-11', archived: true },
+})
+
+function cloudGit(argv: readonly string[], fetched: string[]): string {
+  if (argv[0] !== 'git' || argv[2] !== CHECKOUT) return ''
+  const command = argv.slice(3).join(' ')
+  if (command.startsWith('fetch')) fetched.push(command)
+  if (command === 'branch --show-current') return 'main'
+  if (command.startsWith('branch -r --no-merged main')) return 'origin/dev/cp16\norigin/feature/x'
+  if (command.startsWith('for-each-ref')) return 'origin/dev/cp16\norigin/fix/C-12\norigin/main\norigin/demo/cp3'
+  if (command === 'rev-list --count main..origin/dev/cp16') return '2'
+  if (command.startsWith('log -1') && command.endsWith('origin/dev/cp16')) return `${NOW / 1000 - 3600}\tcp16: the month view`
+  if (command === 'show origin/dev/cp16:docs/handoffs/dev/cp16/prompt.md') return 'Prompt for checkpoint 16 of block 1 — The weekly rooms view'
+  if (command === 'rev-list --count origin/main..main') return '1'
+  return ''
+}
+
+test('in the cloud the lanes come from origin, the coding sessions from the guard, and a closed one is to archive', async ($, on) => {
+  const fetched: string[] = []
+  on('env.get', inTheCloud)
+  on('command.register', () => ({ value: { command: 'lanes-status' } }))
+  on('tool.register', () => ({ value: { tool: 'mcp__metodo__status' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  mock.store(on, {})
+  on('clock.now', () => ({ value: NOW }))
+  on('clock.every', () => ({ value: undefined }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('process.run', (_, e) => output(cloudGit(e.argv, fetched)))
+  on('fs.read', (_, e) => ({
+    value:
+      e.path === `${CHECKOUT}/.claude/metodo.json` ? ACME : e.path === `${CLOUD_BENCH}/state/cloud.json` ? CLOUD_SESSIONS : '',
+  }))
+  on('fs.write', () => ({ value: undefined }))
+
+  await $.session.start({ cwd: CHECKOUT, surface: 'desktop', isInteractive: true })
+  const command = await $.command.run(lanes())
+  expect(command.text).toContain(
+    [
+      'Development · cp16 · ◇ in the cloud (session_d)',
+      '  checkpoint 16 of block 1: The weekly rooms view',
+      '  with the coding session',
+      '  dev/cp16 · 2 commits ahead of main',
+      '  last commit 1 h ago: cp16: the month view',
+      '  ← «Ok for the plan of checkpoint 16» · 5 min ago',
+    ].join('\n'),
+  )
+  expect(command.text).toContain(
+    "Fixes · free · · no session seen\n  to archive: session_f («Prompt for C-12») has had its close-out, and the reviewer archives it with the owner's ok",
+  )
+  // A branch just merged with no session, an archived session, a branch of no lane: nothing.
+  expect(command.text).toContain('Demo · free · · no session seen')
+  expect(command.text).not.toContain('C-11')
+  expect(command.text).not.toContain('feature/x')
+  expect(command.text).toContain('Needs you: push: main is 1 ahead of origin; Fixes: to archive: session_f')
+  // Once, then no more than every few minutes.
+  await $.command.run(lanes())
+  expect(fetched).toEqual(['fetch -q --prune origin'])
+
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await pane.find({ type: 'Text', text: /to archive: session_f/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('in the cloud the coding session does not clean itself at the close-out: the reviewer archives it', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const cleaned: string[] = []
+  on('env.get', inTheCloud)
+  on('command.register', () => ({ value: { command: 'lanes-status' } }))
+  on('tool.register', () => ({ value: { tool: 'mcp__metodo__status' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  mock.store(on, {})
+  on('command.run', { command: 'clear' }, (_, e) => {
+    cleaned.push(e.command)
+    return { text: '' }
+  })
+  on('process.run', (_, e) => output(e.argv.slice(3).join(' ') === 'branch --show-current' ? 'fix/C-12' : ''))
+  on('fs.read', (_, e) => ({ value: e.path === `${CHECKOUT}/.claude/metodo.json` ? ACME : '' }))
+  on('fs.write', () => ({ value: undefined }))
+  on('session.receive', (_, e) => ({ text: e.text }))
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+  await $.session.start({ cwd: CHECKOUT, surface: 'desktop', isInteractive: true })
+  await $.session.receive({ origin: { kind: 'peer' }, text: '<cross-session-message from="session_r" name="Reviewer">\nClose-out of C-12' })
+  await $.turn.complete({ reason: 'answer', answer: 'Understood, C-12 is closed.', durationMs: 1, isAborted: false, turnId: 't' })
+  await clock.advance(1000)
+  expect(cleaned).toEqual([])
+})
