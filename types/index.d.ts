@@ -14,7 +14,9 @@ export type Configuration = {
   release?: string[]
   jobs?: Record<string, { lane: string; what: string }>
   deliveryChecks?: string[]
-  docs?: { blocks?: string; corrections?: string }
+  docs?: { blocks?: string; corrections?: string; handoffs?: string }
+  // In the cloud: the repository the reviewer opens the coding sessions on (create_session's source_url).
+  repository?: string
 }
 
 // The project as the mod uses it: paths already absolute.
@@ -27,6 +29,8 @@ export type Project = {
   bench: string
   lock: string
   jobs: Record<string, { lane: string; what: string }>
+  // In the cloud, the folder on the job's branch with the prompt and the clarifications: <handoffs>/<lane>/<job>/.
+  handoffs: string
   // In the cloud (claude.ai/code): root is the session's own checkout, there are no clones, and
   // the lanes are read from the branches on origin.
   cloud: boolean

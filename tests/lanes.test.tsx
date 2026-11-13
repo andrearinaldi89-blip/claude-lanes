@@ -140,6 +140,11 @@ test('normalize: English fields win over the Italian aliases, which still work a
   expect(both?.protected?.volumes).toEqual(['w'])
   expect(both?.jobs).toEqual({ x: { lane: 'dev', what: 'c' } })
 
+  // The cloud's fields.
+  const cloudy = normalize({ ...JSON.parse(ACME), repository: 'https://github.com/acme/app', docs: { handoffs: 'plan/handoffs/' } })
+  expect(cloudy?.repository).toBe('https://github.com/acme/app')
+  expect(cloudy?.docs).toEqual({ handoffs: 'plan/handoffs/' })
+
   expect(normalize({ name: 'Incomplete' })).toBeNull()
   expect(normalize('nope')).toBeNull()
 })
@@ -811,7 +816,7 @@ const CLOUD_SESSIONS = JSON.stringify({
   session_o: { prompt: 'Prompt for C-11', last: 'Close-out of C-11', at: (NOW - 3600_000) / 1000, branch: 'fix/C-11', archived: true },
 })
 
-function cloudGit(argv: readonly string[], fetched: string[]): string {
+function cloudGit(argv: readonly string[], fetched: string[], handoffs = 'docs/handoffs'): string {
   if (argv[0] !== 'git' || argv[2] !== CHECKOUT) return ''
   const command = argv.slice(3).join(' ')
   if (command.startsWith('fetch')) fetched.push(command)
@@ -820,7 +825,7 @@ function cloudGit(argv: readonly string[], fetched: string[]): string {
   if (command.startsWith('for-each-ref')) return 'origin/dev/cp16\norigin/fix/C-12\norigin/main\norigin/demo/cp3'
   if (command === 'rev-list --count main..origin/dev/cp16') return '2'
   if (command.startsWith('log -1') && command.endsWith('origin/dev/cp16')) return `${NOW / 1000 - 3600}\tcp16: the month view`
-  if (command === 'show origin/dev/cp16:docs/handoffs/dev/cp16/prompt.md') return 'Prompt for checkpoint 16 of block 1 — The weekly rooms view'
+  if (command === `show origin/dev/cp16:${handoffs}/dev/cp16/prompt.md`) return 'Prompt for checkpoint 16 of block 1 — The weekly rooms view'
   if (command === 'rev-list --count origin/main..main') return '1'
   return ''
 }
@@ -893,4 +898,24 @@ test('in the cloud the coding session does not clean itself at the close-out: th
   await $.turn.complete({ reason: 'answer', answer: 'Understood, C-12 is closed.', durationMs: 1, isAborted: false, turnId: 't' })
   await clock.advance(1000)
   expect(cleaned).toEqual([])
+})
+
+test('in the cloud the prompt is read from the folder `docs.handoffs` names', async ($, on) => {
+  const config = JSON.stringify({ ...JSON.parse(ACME), docs: { handoffs: 'plan/handoffs/' } })
+  on('env.get', inTheCloud)
+  on('command.register', () => ({ value: { command: 'lanes-status' } }))
+  on('tool.register', () => ({ value: { tool: 'mcp__metodo__status' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  mock.store(on, {})
+  on('clock.now', () => ({ value: NOW }))
+  on('clock.every', () => ({ value: undefined }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('process.run', (_, e) => output(cloudGit(e.argv, [], 'plan/handoffs')))
+  on('fs.read', (_, e) => ({
+    value:
+      e.path === `${CHECKOUT}/.claude/metodo.json` ? config : e.path === `${CLOUD_BENCH}/state/cloud.json` ? CLOUD_SESSIONS : '',
+  }))
+  on('fs.write', () => ({ value: undefined }))
+  await $.session.start({ cwd: CHECKOUT, surface: 'desktop', isInteractive: true })
+  expect((await $.command.run(lanes())).text).toContain('  checkpoint 16 of block 1: The weekly rooms view')
 })

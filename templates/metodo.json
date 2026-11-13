@@ -15,5 +15,6 @@
   "release": [],
   "jobs": {},
   "deliveryChecks": [],
-  "docs": { "blocks": "docs/blocks", "corrections": "docs/corrections.md" }
+  "docs": { "blocks": "docs/blocks", "corrections": "docs/corrections.md", "handoffs": "docs/handoffs" },
+  "repository": "https://github.com/my-org/my-project"
 }
