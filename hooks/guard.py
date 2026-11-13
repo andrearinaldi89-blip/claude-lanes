@@ -221,6 +221,10 @@ def check_cloud_push(command, cwd, cfg):
             return
         # What it pushes: the refspecs after the remote, or the current branch.
         refs = [w for w in after if not w.startswith("-")][1:] or [current]
+        # `:branch` deletes it on origin: like --delete, the owner decides.
+        if any(r.lstrip("+").startswith(":") for r in refs):
+            ask('Push that deletes branches on origin: the owner decides (metodo:lanes, "push").')
+            return
         targets = [r.lstrip("+").split(":")[-1].removeprefix("refs/heads/") for r in refs]
         targets = [current if t == "HEAD" else t for t in targets]
         if "main" in targets:

@@ -7,6 +7,8 @@
 # run an `rm -rf` on their HOME. The fake docker answers with objects of several
 # projects, and logs every call in docker.log.
 set -euo pipefail
+# The desktop first, whatever machine runs the tests; the cloud has its own section.
+unset CLAUDE_CODE_REMOTE
 
 CLEANUP="$(cd "$(dirname "$0")/.." && pwd)/scripts/cleanup.sh"
 ROOTDIR=$(mktemp -d "${TMPDIR:-/tmp}/test-cleanup.XXXXXX")
@@ -159,6 +161,58 @@ cat >"$P/.claude/metodo.json" <<'EOT'
 EOT
 (cd "$P" && "$CLEANUP" --dry-run) >"$ROOTDIR/alias.txt" 2>&1 || true
 check "the Italian aliases are read: clones and branches found" "grep -q 'acme-fixes' '$ROOTDIR/alias.txt' && grep -q 'Bench copies left' '$ROOTDIR/alias.txt'"
+
+echo "In the cloud: no main folder, the closed jobs found on origin, no push"
+O="$ROOTDIR/origin.git"
+R="$ROOTDIR/cloud/reviewer"
+K="$ROOTDIR/cloud/coding"
+git init -q --bare -b main "$O"
+mkdir -p "$ROOTDIR/cloud"
+git clone -q "$O" "$R" 2>/dev/null
+mkdir -p "$R/.claude"
+cat >"$R/.claude/metodo.json" <<'EOT'
+{
+  "name": "Acme", "prefix": "acme", "root": "~/code/elsewhere", "clones": "lanes",
+  "lanes": [
+    { "id": "dev", "name": "Development", "branches": ["dev/"] },
+    { "id": "fixes", "name": "Fixes", "branches": ["fix/"] },
+    { "id": "demo", "name": "Demo", "branches": ["demo/"], "jobPrefix": "demo-" }
+  ],
+  "bench": "~/.cache/acme-cloud", "copyMarker": "docker-compose.yml", "lock": "~/.cache/acme-e2e.lock",
+  "protected": { "volumes": ["acme_pgdata"], "stacks": ["acme"] }
+}
+EOT
+git -C "$R" add . && git -C "$R" commit -q -m start && git -C "$R" push -q origin main
+# The reviewer opens the jobs' branches from main and pushes them.
+for b in dev/cp18 fix/C-12 demo/cp3 feature/x; do git -C "$R" branch "$b" main && git -C "$R" push -q origin "$b"; done
+# The coding sessions work in their own containers and push.
+git clone -q "$O" "$K"
+for b in dev/cp18 fix/C-12 feature/x; do
+  git -C "$K" switch -q "$b" && echo "$b" >"$K/w-${b//\//-}" && git -C "$K" add . && git -C "$K" commit -q -m "$b" && git -C "$K" push -q origin "$b"
+done
+# The reviewer merges cp18 and feature/x with --no-ff, and has not pushed main yet.
+git -C "$R" fetch -q origin
+git -C "$R" merge -q --no-ff --no-edit origin/dev/cp18
+git -C "$R" merge -q --no-ff --no-edit origin/feature/x
+CB="$HOME/.cache/acme-cloud"
+mkdir -p "$CB/cp18/base" "$CB/C-12/base" && touch "$CB/cp18/base/docker-compose.yml" "$CB/C-12/base/docker-compose.yml"
+: >"$LOG"
+check "on the desktop the reviewer's checkout is refused (not the main folder)" "! (cd '$R' && '$CLEANUP' >/dev/null 2>&1)"
+(cd "$R" && CLAUDE_CODE_REMOTE=true "$CLEANUP") >"$ROOTDIR/cloud.txt" 2>&1 || ko "the cloud cleanup exits with an error"
+cat "$ROOTDIR/cloud.txt" | sed 's/^/    | /'
+check "it writes the push that deletes dev/cp18 together with main" "grep -qx '  git push origin main :dev/cp18' '$ROOTDIR/cloud.txt'"
+check "it does not push: dev/cp18 is still on origin, main is not" \
+  "git -C '$O' rev-parse -q --verify refs/heads/dev/cp18 >/dev/null && [ \"\$(git -C '$O' rev-parse main)\" != \"\$(git -C '$R' rev-parse main)\" ]"
+check "the local dev/cp18, with no commits of its own here, is deleted" "! git -C '$R' rev-parse -q --verify refs/heads/dev/cp18 >/dev/null"
+check "fix/C-12 (not merged), demo/cp3 (just created) and feature/x (no lane) stay" \
+  "! grep -E 'git push.*(C-12|cp3|feature)' '$ROOTDIR/cloud.txt' && git -C '$R' rev-parse -q --verify refs/heads/demo/cp3 >/dev/null && git -C '$R' rev-parse -q --verify refs/heads/fix/C-12 >/dev/null"
+check "says demo/cp3 has no commits of its own" "grep -q 'origin: demo/cp3 has no commits of its own' '$ROOTDIR/cloud.txt'"
+check "the bench copy of cp18 goes, C-12's stays" "[ ! -e '$CB/cp18/base' ] && [ -d '$CB/C-12/base' ]"
+check "cp18's Docker things removed" "grep -q '^docker rm -v acme-cp18-iter-api-1$' '$LOG'"
+check "it reminds to archive the coding sessions" "grep -q 'archive them' '$ROOTDIR/cloud.txt'"
+git -C "$R" push -q origin main
+(cd "$R" && CLAUDE_CODE_REMOTE=true "$CLEANUP" --dry-run) >"$ROOTDIR/cloud2.txt" 2>&1
+check "with main pushed, the push only deletes" "grep -qx '  git push origin :dev/cp18' '$ROOTDIR/cloud2.txt'"
 
 echo
 if [ $errors -eq 0 ]; then echo "All tests pass (folder: $ROOTDIR)"; else echo "$errors tests fail (folder: $ROOTDIR)"; exit 1; fi
