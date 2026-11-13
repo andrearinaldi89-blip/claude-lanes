@@ -33,6 +33,16 @@ ITALIAN = {
 }
 
 
+def env(cloud=False, home=None):
+    """The hooks' environment: on the desktop unless asked, whatever machine runs the tests."""
+    e = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_REMOTE"}
+    if cloud:
+        e["CLAUDE_CODE_REMOTE"] = "true"
+    if home:
+        e["HOME"] = home
+    return e
+
+
 def sh(cwd, *argv):
     subprocess.run(argv, cwd=cwd, check=True, capture_output=True)
 
@@ -70,9 +80,12 @@ class GuardBase:
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def call(self, tool, tool_input, cwd):
+    CLOUD = False
+
+    def call(self, tool, tool_input, cwd, event="PreToolUse"):
         r = subprocess.run([sys.executable, GUARD], input=json.dumps(
-            {"tool_name": tool, "tool_input": tool_input, "cwd": cwd}), capture_output=True, text=True)
+            {"tool_name": tool, "tool_input": tool_input, "cwd": cwd, "hook_event_name": event}),
+            capture_output=True, text=True, env=env(self.CLOUD, self.tmp.name))
         return r.returncode, r.stdout, r.stderr
 
     def bash(self, command, cwd=None):
@@ -149,6 +162,81 @@ class GuardItalianAliases(GuardBase, unittest.TestCase):
     NAME = "Acme2"
 
 
+def decision(out):
+    return json.loads(out)["hookSpecificOutput"]["permissionDecision"] if out else None
+
+
+class GuardCloud(unittest.TestCase):
+    """In the cloud: pushes by branch, and the coding sessions messaged and archived one job at a time."""
+    SEND = "mcp__claude-code-remote__send_message"
+    ARCHIVE = "mcp__claude-code-remote__archive_session"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.main, self.clone = make_project(self.tmp.name, "Acme", ENGLISH)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    call = GuardBase.call
+    bash = GuardBase.bash
+    CLOUD = True
+
+    def send(self, session, message, delivered=True):
+        code, out, err = self.call(self.SEND, {"session_id": session, "message": message}, self.main)
+        if code == 0 and delivered:
+            self.call(self.SEND, {"session_id": session, "message": message}, self.main, "PostToolUse")
+        return code, out, err
+
+    def test_the_job_branch_goes_out_main_asks_the_rest_is_blocked(self):
+        self.assertEqual(self.bash("git push -u origin dev/cp1"), (0, "", ""))
+        self.assertEqual(self.bash("git push"), (0, "", ""))
+        self.assertEqual(self.bash("git push origin HEAD"), (0, "", ""))
+        code, out, _ = self.bash("git push origin main")
+        self.assertEqual((code, decision(out)), (0, "ask"))
+        code, out, _ = self.bash("git push --force origin dev/cp1")
+        self.assertEqual((code, decision(out)), (0, "ask"))
+        code, _, err = self.bash("git push origin feature/x")
+        self.assertEqual(code, 2)
+        self.assertIn("feature/x", err)
+        # on main, a bare push is a push to main
+        code, out, _ = self.bash("git push", self.main)
+        self.assertEqual((code, decision(out)), (0, "ask"))
+
+    def test_release_only_from_main(self):
+        code, out, _ = self.bash("gcloud run deploy app", self.main)
+        self.assertEqual((code, decision(out)), (0, "ask"))
+        self.assertEqual(self.bash("gcloud run deploy app")[0], 2)
+
+    def test_one_session_one_job_and_archive_after_the_close_out(self):
+        self.assertEqual(self.send("session_a", "Prompt for C-12\nThe file is …")[0], 0)
+        self.assertEqual(self.send("session_a", "Ok for the plan of C-12")[0], 0)
+        # archiving before the close-out is blocked
+        code, _, err = self.call(self.ARCHIVE, {"session_id": "session_a"}, self.main)
+        self.assertEqual(code, 2)
+        self.assertIn("Close-out of", err)
+        # a second job's prompt to the same session is blocked, in Italian too
+        for second in ("Prompt for C-13", "**Prompt della correzione C-13**", "New work: C-13"):
+            code, _, err = self.send("session_a", second)
+            self.assertEqual(code, 2, second)
+            self.assertIn("create_session", err)
+        self.assertEqual(self.send("session_a", "## Close-out of C-12")[0], 0)
+        code, out, _ = self.call(self.ARCHIVE, {"session_id": "session_a"}, self.main)
+        self.assertEqual((code, decision(out)), (0, "ask"))
+        self.assertIn("C-12", out)
+        # a new session takes the new job
+        self.assertEqual(self.send("session_b", "Prompt for C-13")[0], 0)
+
+    def test_an_undelivered_prompt_is_not_counted(self):
+        self.assertEqual(self.send("session_a", "Prompt for C-12", delivered=False)[0], 0)
+        self.assertEqual(self.send("session_a", "Prompt for C-12")[0], 0)
+
+    def test_an_unknown_session_only_asks(self):
+        code, out, _ = self.call(self.ARCHIVE, {"session_id": "session_z"}, self.main)
+        self.assertEqual((code, decision(out)), (0, "ask"))
+        self.assertIn("cannot tell", out)
+
+
 class Config(unittest.TestCase):
     def test_italian_aliases_become_canonical(self):
         c = normalize(ITALIAN)
@@ -201,9 +289,10 @@ class Delivery(unittest.TestCase):
             f.write("\n".join(json.dumps(l) for l in lines))
         return path
 
-    def run_gate(self, transcript):
+    def run_gate(self, transcript, cwd=None, cloud=False):
         r = subprocess.run([sys.executable, DELIVERY], input=json.dumps(
-            {"cwd": self.clone, "transcript_path": transcript}), capture_output=True, text=True)
+            {"cwd": cwd or self.clone, "transcript_path": transcript}), capture_output=True, text=True,
+            env=env(cloud))
         return r.returncode, r.stderr
 
     def write_done(self, folder, name, text):
@@ -249,6 +338,18 @@ class Delivery(unittest.TestCase):
         self.write_done("docs/blocchi", "3.md", "**Fatto:** corsa 1, uscita vera\n")
         self.assertEqual(self.run_gate(self.transcript("Consegna del x", "controllo-consegna"))[0], 0)
         self.clear_docs()
+
+    def test_in_the_cloud_the_lane_branch_makes_the_coding_session(self):
+        self.clear_docs()
+        # A cloud checkout outside any clones folder, on a lane's branch.
+        cloud = os.path.join(self.tdir, "cloud-checkout")
+        sh(self.tdir, "git", "clone", "-q", self.main, cloud)
+        sh(cloud, "git", "switch", "-q", "-c", "dev/cp2")
+        t = self.transcript("Delivery of checkpoint 2")
+        self.assertEqual(self.run_gate(t, cloud, cloud=True)[0], 2)
+        self.assertEqual(self.run_gate(t, cloud, cloud=False)[0], 0)
+        sh(cloud, "git", "switch", "-q", "main")
+        self.assertEqual(self.run_gate(t, cloud, cloud=True)[0], 0)
 
     def test_doc_paths_from_config_and_fallback(self):
         self.clear_docs()

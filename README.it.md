@@ -24,6 +24,6 @@ Poi si copia `templates/metodo.json` in `.claude/metodo.json` e si segue «Adopt
 
 ## Che cosa funziona dove
 
-Il nocciolo (hook, skill, modelli, script) funziona da terminale e su Linux. La coordinazione fra sessioni (messaggi, pannello, risveglio) richiede Claude Code desktop e, per ora, macOS.
+Il nocciolo (hook, skill, modelli, script) funziona da terminale e su Linux. La coordinazione fra sessioni (messaggi, pannello, risveglio) richiede Claude Code desktop e, per ora, macOS. In cloud (Claude Code sul web) ogni sessione ha il suo container: il revisore apre una sessione di codice per ogni lavoro, sul suo branch, il lavoro passa da `origin`, e alla chiusura la sessione si archivia (con la conferma del proprietario) invece di pulirsi; la guardia blocca un secondo prompt alla stessa sessione e un'archiviazione prima della «Chiusura…».
 
 Contatto: GitHub Discussions di questo repository. Licenza: [MIT](LICENSE).

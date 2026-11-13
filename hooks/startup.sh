@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Orientation of the coding session, at opening (METHOD.md, "writing code").
 #
-# SessionStart hook of the plugin. It acts only in a lane's clone (a folder under
-# `<root>/<clones>/` of `.claude/metodo.json`); elsewhere it prints nothing. What it
+# SessionStart hook of the plugin. It acts only in a lane's coding session: a clone (a
+# folder under `<root>/<clones>/` of `.claude/metodo.json`) or, in the cloud, a session
+# whose checkout is on a lane's branch; elsewhere it prints nothing. What it
 # prints enters the session's context: branch and commit, whether the tree is dirty,
 # how far the branch is ahead of or behind origin/main, and the last closed "Done".
 # These are the things a session should look at before writing code, and that from
@@ -19,27 +20,30 @@ while [ "$d" != "/" ]; do
 done
 [ -n "$CONF" ] || exit 0
 
-# Prints the clones folder and the block documents folder, tab-separated.
+BRANCH=$(git branch --show-current 2>/dev/null || echo '?')
+
+# Prints whether this is a coding session (yes/no) and the block documents folder, tab-separated.
 settings() {
-  python3 - "$CONF" "$HOME" "$CWD" "$HOOKS" <<'PY'
-import os, sys
-sys.path.insert(0, sys.argv[4])
-from config import load, doc_paths
+  python3 - "$CONF" "$CWD" "$HOOKS" "$BRANCH" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[3])
+from config import load, doc_paths, is_coding_session
 c = load(sys.argv[1])
-root = c["root"].replace("~", sys.argv[2], 1) if c["root"].startswith("~") else c["root"]
-print(os.path.realpath(os.path.join(root, c.get("clones", ""))) + "\t" + doc_paths(sys.argv[3], c)[0])
+print(("yes" if is_coding_session(sys.argv[2], c, sys.argv[4]) else "no") + "\t" + doc_paths(sys.argv[2], c)[0])
 PY
 }
-IFS=$'\t' read -r CLONES BLOCKS < <(settings)
-case "$CWD/" in "$CLONES"/*) ;; *) exit 0 ;; esac
-
-BRANCH=$(git branch --show-current 2>/dev/null || echo '?')
+IFS=$'\t' read -r CODING BLOCKS < <(settings)
+[ "$CODING" = "yes" ] || exit 0
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo '?')
 DIRTY=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
 git fetch -q origin main 2>/dev/null || true
 read -r BEHIND AHEAD < <(git rev-list --left-right --count origin/main...HEAD 2>/dev/null || echo '? ?')
 
-echo "Clone orientation (the method's startup hook):"
+if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
+  echo "Coding session orientation, in the cloud (the method's startup hook):"
+else
+  echo "Clone orientation (the method's startup hook):"
+fi
 echo "- folder: $CWD"
 echo "- branch: $BRANCH @ $COMMIT, $AHEAD commits ahead and $BEHIND behind origin/main"
 if [ "$DIRTY" != "0" ]; then

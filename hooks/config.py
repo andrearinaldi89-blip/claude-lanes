@@ -75,3 +75,26 @@ def doc_paths(cwd, cfg):
         if not os.path.exists(os.path.join(cwd, corrections)) and os.path.exists(os.path.join(cwd, "docs/correzioni.md")):
             corrections = "docs/correzioni.md"
     return blocks, corrections
+
+
+def in_cloud():
+    """True in a Claude Code cloud session (claude.ai/code), where every session has its own container."""
+    return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
+
+
+def lane_of_branch(branch, cfg):
+    """The id of the lane that owns the branch (`branches` prefixes), or None."""
+    for lane in cfg.get("lanes", []):
+        if branch and any(branch.startswith(p) for p in lane.get("branches", []) if p):
+            return lane.get("id")
+    return None
+
+
+def is_coding_session(cwd, cfg, branch):
+    """A lane's coding session: on the desktop it works in a clone under `<root>/<clones>/`;
+    in the cloud there are no clones, and it is the session whose checkout is on a lane's branch."""
+    main_folder = os.path.realpath(os.path.expanduser(cfg.get("root", "")))
+    clones = os.path.join(main_folder, cfg.get("clones", ""))
+    if cfg.get("clones") and os.path.realpath(cwd).startswith(clones + os.sep):
+        return True
+    return in_cloud() and lane_of_branch(branch, cfg) is not None
