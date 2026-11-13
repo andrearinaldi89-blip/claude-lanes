@@ -32,7 +32,7 @@ A plugin installed from a local folder is read in place, without copying: a chan
 | `METHOD.md` | the core of the method, imported by every `CLAUDE.md`: what every session needs |
 | `skills/` | the rules of a phase, loaded only by whoever enters it: `review`, `lanes`, `handoffs`, `design` |
 | `hooks/register.tsx` | the lanes mod: the line above the prompt, `/lanes-status`, the panel and the `mcp__metodo__status` tool; the coding session's `/clear` at the «Close-out…», the refusal of a new job's prompt toward a still-dirty session, and the wake-up of a coding session the app closed for memory |
-| `hooks/guard.py` | the guard: the rules that do not depend on anyone's memory (`METHOD.md`, «If you are writing code»), including `git push` only from the main folder |
+| `hooks/guard.py` | the guard: the rules that do not depend on anyone's memory (`METHOD.md`, «If you are writing code»), including `git push` only from the main folder; in the cloud, pushes by branch and the coding sessions' prompts and archives (PreToolUse, and PostToolUse to note what was sent) |
 | `hooks/delivery.py` | the delivery gate (Stop hook): a «Delivery of…» from a clone does not go out without `delivery-check` and without the «Done» |
 | `hooks/startup.sh` | the coding session's orientation (SessionStart hook): branch, commit, tree, distance from `origin/main` |
 | `agents/delivery-check.md` | the sub-agent that rereads the delivery before the review |

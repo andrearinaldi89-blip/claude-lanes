@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """The delivery gate: a rule of "How to work" that does not depend on memory.
 
-Stop hook of the plugin (hooks/hooks.json). It acts only in a lane's clone (a folder
-under `<root>/<clones>/` of `.claude/metodo.json`), and only when the session's last
+Stop hook of the plugin (hooks/hooks.json). It acts only in a lane's coding session: a
+clone (a folder under `<root>/<clones>/` of `.claude/metodo.json`) or, in the cloud, a
+session whose checkout is on a lane's branch; and only when the session's last
 message is a delivery: it starts with "Delivery of" (the Italian "Consegna del" and
 "Consegna della" are also recognized). Then it checks two things, and if one is missing
 it does not let the turn end (exit 2, the reason on stderr reaches the session):
@@ -24,18 +25,11 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from config import doc_paths, find_config  # noqa: E402
+from config import doc_paths, find_config, is_coding_session  # noqa: E402
 
 PLACEHOLDERS = ("TO FILL", "lo scrive la sessione di codice")
 SUBAGENTS = ("delivery-check", "controllo-consegna")
 DELIVERY = re.compile(r"\s*\**\s*(Delivery of|Consegna dell?a?)\b")
-
-
-def in_a_clone(cwd, cfg):
-    main_folder = os.path.realpath(os.path.expanduser(cfg.get("root", "")))
-    clones = os.path.join(main_folder, cfg.get("clones", ""))
-    real = os.path.realpath(cwd)
-    return cfg.get("clones") and real.startswith(clones + os.sep)
 
 
 def git(cwd, *args):
@@ -118,7 +112,7 @@ def main():
         return
     cwd = data.get("cwd") or os.getcwd()
     found = find_config(cwd)
-    if not found or not in_a_clone(cwd, found[1]):
+    if not found or not is_coding_session(cwd, found[1], (git(cwd, "branch", "--show-current") or "").strip()):
         return
     cfg = found[1]
     ev = events(data.get("transcript_path", ""))

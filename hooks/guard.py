@@ -24,6 +24,20 @@ and writes the reason on stderr, which reaches the session.
    (metodo:lanes, "push"). From a clone it is blocked; from the main folder it asks for
    confirmation, because the owner decides on the push.
 
+In the cloud (claude.ai/code, `CLAUDE_CODE_REMOTE=true`) every session has its own
+container and there is no main folder: rules 4 and 5 read the branch instead. A release
+starts only from `main`, with confirmation. A coding session pushes its job's branch
+(a lane's `branches` prefix), because that is how the reviewer picks the work up; a push
+to `main`, or a forced one, asks for confirmation; any other push is blocked.
+
+6. In the cloud, the coding sessions are messaged with `send_message` and archived with
+   `archive_session` (metodo:handoffs, "In the cloud"). Every job has a new session: a
+   «Prompt for…» to a session that has already received one is blocked. A session is
+   archived only after its «Close-out of…», and the owner confirms every archive. What
+   was sent to whom the guard notes, after each delivered message (PostToolUse), in
+   `<bench>/state/cloud.json`, in the reviewer's own container; with that file missing
+   nobody knows, and the archive only asks.
+
 Changes through Bash to protected files are caught only for the most common commands
 (rm, mv, sed -i, perl -i, truncate, tee, redirection): this is not a complete barrier.
 That is why `clones.sh` also writes `deny` rules on the protected folders into the
@@ -35,14 +49,23 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from config import find_config  # noqa: E402
+from config import find_config, in_cloud, lane_of_branch  # noqa: E402
 
 
 def block(reason):
     print(reason, file=sys.stderr)
     sys.exit(2)
+
+
+def ask(reason):
+    print(json.dumps({"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "ask",
+        "permissionDecisionReason": reason,
+    }}))
 
 
 def git(cwd, *args):
@@ -170,33 +193,137 @@ def check_release(command, cwd, cfg):
     main_folder = os.path.expanduser(cfg["root"])
     root = git(cwd, "rev-parse", "--show-toplevel")
     branch = git(cwd, "branch", "--show-current")
-    if root and os.path.realpath(root) == os.path.realpath(main_folder) and branch == "main":
-        print(json.dumps({"hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "ask",
-            "permissionDecisionReason": 'Release to production: the owner confirms it, every time (metodo:lanes, "release").',
-        }}))
+    # In the cloud there is no main folder: every session has its own checkout.
+    if branch == "main" and (in_cloud() or (root and os.path.realpath(root) == os.path.realpath(main_folder))):
+        ask('Release to production: the owner confirms it, every time (metodo:lanes, "release").')
         return
+    if in_cloud():
+        block(f'Blocked: in the cloud a release starts only from main, and the owner confirms it (metodo:lanes, "release"). '
+              f"You are on branch {branch or '?'}. If you think it is needed, stop and say so.")
     block(f"Blocked: a release starts only from main in the main folder ({main_folder}), and the "
           f'owner confirms it (metodo:lanes, "release"). You are in {root or cwd}, on branch {branch or "?"}. '
           "If you think it is needed, stop and say so.")
 
 
+PUSH = re.compile(r"(^|\s)git\s+(-C\s+\S+\s+)?push\b")
+
+
+def check_cloud_push(command, cwd, cfg):
+    """In the cloud: the job's branch goes out freely, main and a forced push ask, the rest is blocked."""
+    current = git(cwd, "branch", "--show-current") or ""
+    for piece in pieces(command):
+        if not PUSH.search(piece):
+            continue
+        words = words_of(piece)
+        after = words[[i for i, w in enumerate(words) if w == "push"][0] + 1:]
+        if any(w in ("-f", "--force", "--mirror", "--all", "--delete", "-d") or w.startswith("--force") for w in after):
+            ask('Forced push, or of more than one branch: the owner decides (metodo:lanes, "push").')
+            return
+        # What it pushes: the refspecs after the remote, or the current branch.
+        refs = [w for w in after if not w.startswith("-")][1:] or [current]
+        targets = [r.lstrip("+").split(":")[-1].removeprefix("refs/heads/") for r in refs]
+        targets = [current if t == "HEAD" else t for t in targets]
+        if "main" in targets:
+            ask('Push to main: the owner decides, once per closed piece of work (metodo:lanes, "push").')
+            return
+        if not all(lane_of_branch(t, cfg) is not None for t in targets):
+            block(f"Blocked: in the cloud a session pushes only its job's branch, one of the lanes' "
+                  f"(`branches` in .claude/metodo.json), and main with the owner's ok. This push goes to "
+                  f"{', '.join(targets)}. If you think it is needed, stop and say so.")
+
+
 def check_push(command, cwd, cfg):
-    if not any(re.search(r"(^|\s)git\s+(-C\s+\S+\s+)?push\b", p) for p in pieces(command)):
+    if not any(PUSH.search(p) for p in pieces(command)):
+        return
+    if in_cloud():
+        check_cloud_push(command, cwd, cfg)
         return
     main_folder = os.path.expanduser(cfg["root"])
     root = git(cwd, "rev-parse", "--show-toplevel")
     if root and os.path.realpath(root) == os.path.realpath(main_folder):
-        print(json.dumps({"hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "ask",
-            "permissionDecisionReason": 'Push to origin: the owner decides, once per closed piece of work (metodo:lanes, "push").',
-        }}))
+        ask('Push to origin: the owner decides, once per closed piece of work (metodo:lanes, "push").')
         return
     block(f"Blocked: a git push starts only from the main folder ({main_folder}), and the owner decides on it. "
           f"You are in {root or cwd}: the work of a clone is picked up by the reviewer with a fetch "
           '(metodo:lanes, "one folder per lane"). If you think it is needed, stop and say so.')
+
+
+# The protocol's first lines, in English and in Italian (the same as the lanes mod's).
+CLOSEOUT = re.compile(r"^Close-?out of |^Chiusura (del|della) ")
+PROMPT = re.compile(r"^(Prompt (for|del|della|dei|delle|degli)|Lavoro nuovo|New work)\b")
+SEND = "mcp__claude-code-remote__send_message"
+ARCHIVE = "mcp__claude-code-remote__archive_session"
+
+
+def first_line(text):
+    for r in (text or "").splitlines():
+        r = re.sub(r"^[\s#>*-]+|[\s*]+$", "", r)
+        if r and not r.startswith("<"):
+            return r[:120]
+    return ""
+
+
+def cloud_state_file(cfg):
+    return os.path.join(os.path.expanduser(cfg["bench"]), "state", "cloud.json")
+
+
+def read_cloud_state(cfg):
+    try:
+        with open(cloud_state_file(cfg)) as f:
+            state = json.load(f)
+        return state if isinstance(state, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def check_send(tool_input, cfg):
+    target = tool_input.get("session_id", "")
+    line = first_line(tool_input.get("message", ""))
+    if not target or not PROMPT.match(line):
+        return
+    seen = read_cloud_state(cfg).get(target) or {}
+    if seen.get("prompt"):
+        block(f"Not sent: in the cloud every job has a new coding session, and {target} has already received "
+              f"«{seen['prompt']}». Close that job with its «Close-out of…» and archive the session, then open a new "
+              "one with create_session on the job's branch and send it this prompt (metodo:handoffs, \"In the cloud\"). "
+              "A message of the same job does not start with «Prompt for…».")
+
+
+def note_sent(tool_input, cfg):
+    """After a delivered message: what went to that session, for the next prompt and for the archive."""
+    target = tool_input.get("session_id", "")
+    if not target:
+        return
+    line = first_line(tool_input.get("message", ""))
+    state = read_cloud_state(cfg)
+    seen = state.get(target) or {}
+    seen.update({"last": line, "at": int(time.time())})
+    if PROMPT.match(line) and not seen.get("prompt"):
+        seen["prompt"] = line
+    state[target] = seen
+    file = cloud_state_file(cfg)
+    try:
+        os.makedirs(os.path.dirname(file), exist_ok=True)
+        with open(file, "w") as f:
+            json.dump(state, f)
+    except OSError:
+        pass
+
+
+def check_archive(tool_input, cfg):
+    target = tool_input.get("session_id", "")
+    seen = read_cloud_state(cfg).get(target)
+    if seen is None:
+        ask(f"Archive {target}: the guard has not seen the messages to this session (another reviewer, or a "
+            "container started afresh), so it cannot tell whether its «Close-out of…» went out. The owner confirms.")
+        return
+    if not CLOSEOUT.match(seen.get("last", "")):
+        block(f"Blocked: a coding session is archived only after its «Close-out of…», and the last message to "
+              f"{target} was «{seen.get('last', '')}». First the «Verification», the merge and the cleanup, then the "
+              "«Close-out of…»; when the session has answered it and its branch is on origin, archive it "
+              '(metodo:handoffs, "In the cloud").')
+    ask(f"Archive the coding session {target} of «{seen.get('prompt') or '?'}»: the close-out has gone out. "
+        "Archiving releases its container, and the owner confirms it.")
 
 
 def main():
@@ -207,6 +334,18 @@ def main():
     tool = data.get("tool_name", "")
     tool_input = data.get("tool_input") or {}
     cwd = data.get("cwd") or os.getcwd()
+    if tool in (SEND, ARCHIVE):
+        found = find_config(cwd)
+        if not found:
+            return
+        if data.get("hook_event_name") == "PostToolUse":
+            if tool == SEND:
+                note_sent(tool_input, found[1])
+        elif tool == SEND:
+            check_send(tool_input, found[1])
+        else:
+            check_archive(tool_input, found[1])
+        return
     if tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
         check_file(tool_input.get("file_path") or tool_input.get("notebook_path"), cwd)
     elif tool == "Bash":

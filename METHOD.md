@@ -8,7 +8,7 @@ This file holds only what **every** session needs. The rules of a phase live in 
 |---|---|---|
 | planning, reviewing a checkpoint, runs, the bench | `metodo:review` | before designing or reviewing a delivery |
 | opening, closing, cleaning up a job; clones, merges, release, push, names | `metodo:lanes` | before creating a branch, merging, or doing the close-out cleanup |
-| messages between reviewer and coding session, close-outs, notifications | `metodo:handoffs` | before sending or answering a message between sessions |
+| messages between reviewer and coding session, close-outs, notifications; in the cloud, opening and archiving coding sessions | `metodo:handoffs` | before sending or answering a message between sessions |
 | `docs/DESIGN.md`, accessibility thresholds, UI review | `metodo:design` | for a checkpoint that touches the interface, or a UI review |
 
 A coding session loads none of these: what it needs is below and in «How we work» in the block document.
@@ -50,7 +50,7 @@ The work is split across different sessions. **The handoff is the repository, no
 
 ## When you compact
 
-After a compaction, the rule the session remembers is the last one it saw, not the method's: that is how prompts get sent without a «Close-out…». In the summary, always keep at the top: the lane and the open job (branch, starting commit, folder), where the cycle stands (prompt, plan, ok, delivery, close-out) and what is awaited, the ids of the reviewing session and the coding session, the files touched and the run commands with their final lines. After compacting, before sending a message between sessions, reload `metodo:handoffs`.
+After a compaction, the rule the session remembers is the last one it saw, not the method's: that is how prompts get sent without a «Close-out…». In the summary, always keep at the top: the lane and the open job (branch, starting commit, folder), where the cycle stands (prompt, plan, ok, delivery, close-out) and what is awaited, the ids of the reviewing session and the coding session (in the cloud, the `session_…` id of the job's coding session and whether it is archived), the files touched and the run commands with their final lines. After compacting, before sending a message between sessions, reload `metodo:handoffs`.
 
 ---
 

@@ -20,7 +20,7 @@
 
 | Piece | What it does |
 |---|---|
-| **Guard** (`hooks/guard.py`, PreToolUse) | Blocks the commands you would regret: editing an already-applied migration, a `docker compose` that deletes volumes without naming its project, protected volumes, `prune -a`, a release from outside the main folder, a `git push` from a clone. |
+| **Guard** (`hooks/guard.py`, PreToolUse) | Blocks the commands you would regret: editing an already-applied migration, a `docker compose` that deletes volumes without naming its project, protected volumes, `prune -a`, a release from outside the main folder, a `git push` from a clone. In the cloud: a second job's prompt to the same coding session, and an archive before the close-out. |
 | **Delivery gate** (`hooks/delivery.py`, Stop) | A «Delivery of…» report from a clone does not go out without the `delivery-check` sub-agent having run and the «Done» written. |
 | **Start-up orientation** (`hooks/startup.sh`, SessionStart) | Prints branch, commit, tree state and distance from `origin/main` when a coding session opens. |
 | **Lanes panel** (`/lanes-status`, status line) | One line above the prompt, and a panel: what each lane is doing, who holds the end-to-end lock, which sessions are to clean. |
@@ -58,6 +58,9 @@ The plugin acts only in projects that have a `.claude/metodo.json`.
 | **Messages between sessions** (`SendMessage`, `list_sessions`, `start_session`) | **Claude Code desktop** | no | no |
 | **Lanes mod** (status line, `/lanes-status`, panel, auto `/clear`, dirty-session refusal) | Claude Code's mod API (not stable); the panel is desktop-only | to be verified | only if the desktop app runs |
 | **Wake-up** of a coding session closed by the app | the desktop app's log (format not documented, may change) | no | no |
+| **Cloud sessions** (`create_session`, `send_message`, `archive_session`; one coding session per job, archived at close-out) | Claude Code on the web (claude.ai/code) and its `claude-code-remote` tools | no | in the cloud |
+
+In the cloud the coordination works differently: every session has its own container, so there are no clones and no panel; a coding session is opened for each job on its branch, the work goes through `origin`, and at close-out the session is archived instead of cleaned (`skills/handoffs/SKILL.md`, «In the cloud»). The guard, the delivery gate and the start-up hook recognize a cloud coding session by its lane branch.
 
 Two levels, then: the **core** (hooks, skills, templates, scripts) works in a terminal and on Linux, because it is hooks, files and git. The **coordination between sessions** needs Claude Code desktop and, for now, macOS. The mod uses unstable APIs and may break with a Claude Code update.
 
@@ -92,7 +95,7 @@ Between a lane's reviewer and its coding session, every step is a message whose 
 2. **Plan for…** (coding → reviewer): what changes, the test, the mutation that will show it red. No code until the ok.
 3. **Delivery of…** (coding → reviewer): after `delivery-check`, with the real outputs of the runs. The delivery gate stops a delivery without the check and without the «Done».
 4. The reviewer verifies by trying to break the work, then sends corrections or closes.
-5. **Close-out of…** (reviewer → coding): after the «Verification», the merge and the cleanup. The mod clears the coding session; a new prompt is refused while the session is dirty.
+5. **Close-out of…** (reviewer → coding): after the «Verification», the merge and the cleanup. The mod clears the coding session; a new prompt is refused while the session is dirty. In the cloud the reviewer archives the coding session instead, with the owner's confirmation, and the next job gets a new one.
 
 Details: [`skills/handoffs/SKILL.md`](skills/handoffs/SKILL.md).
 
