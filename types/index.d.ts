@@ -23,10 +23,24 @@ export type Project = {
   prefix: string
   root: string
   clones: string
-  lanes: { id: string; name: string }[]
+  lanes: { id: string; name: string; branches: string[] }[]
   bench: string
   lock: string
   jobs: Record<string, { lane: string; what: string }>
+  // In the cloud (claude.ai/code): root is the session's own checkout, there are no clones, and
+  // the lanes are read from the branches on origin.
+  cloud: boolean
+}
+
+// What the guard notes in the cloud, in <bench>/state/cloud.json, for every coding session the
+// reviewer wrote to: the first prompt, the last message and when, the job's branch named in a
+// message, and whether the session was archived.
+export type CloudSession = {
+  prompt?: string
+  last?: string
+  at?: number
+  branch?: string
+  archived?: boolean
 }
 
 export type Activity = 'working' | 'idle' | 'permission'
@@ -98,6 +112,10 @@ export type Lane = {
   handoff: Handoff | null
   // The job is closed, with the clone back on main or the close-out arrived, but the session still has its conversation.
   toClean: boolean
+  // In the cloud: the coding sessions of the lane that received their «Close-out…» and are not archived yet.
+  toArchive: { session: string; prompt: string }[]
+  // In the cloud: the coding session of the open job, in its own container, whose activity is not visible here.
+  cloudSession: string | null
   review: Review | null
   commands: Command[]
   run: Run | null

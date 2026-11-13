@@ -3,6 +3,7 @@ import type { Color, EngineInterface, Register } from 'claude-code'
 import type {
   Activity,
   Annotation,
+  CloudSession,
   Command,
   Configuration,
   Handoff,
@@ -28,6 +29,11 @@ const PANEL = 'lanes'
 const EVERY_MS = 30_000
 
 let home = ''
+// In a cloud session (claude.ai/code): every session has its own container and checkout.
+let cloud = false
+// When the cloud's checkout last fetched from origin: the branches are read from there.
+let fetchedAt = 0
+const FETCH_EVERY_MS = 5 * 60_000
 // The folder the mod has oriented itself on: the app starts sessions in a spare folder
 // (~/.claude/spares/…) and moves them into the project afterwards, without another session.start.
 let seenCwd: string | null = null
@@ -56,6 +62,9 @@ const expand = (path: string) => path.replace(/^~(?=\/|$)/, home)
 const inside = (path: string, dir: string) => path === dir || path.startsWith(`${dir}/`)
 const folder = (p: Project, id: string) => `${p.root}/${p.clones}/${p.prefix}-${id}`
 const annotationFile = (p: Project, id: string) => `${p.bench}/state/${id}.json`
+const cloudFile = (p: Project) => `${p.bench}/state/cloud.json`
+// In the cloud the prompt and the clarifications live on the job's branch (metodo:handoffs, «In the cloud»).
+const HANDOFFS = 'docs/handoffs'
 const reviewsDir = (p: Project) => `${p.bench}/state/reviews`
 const laneName = (p: Project, id: string) => p.lanes.find(l => l.id === id)?.name ?? id
 // A path in a command's text: as is, or with the spaces preceded by a backslash.
@@ -169,13 +178,15 @@ async function readConfiguration($: EngineInterface, dir: string): Promise<Confi
   return normalize(await readJson<unknown>($, `${dir}/.claude/metodo.json`))
 }
 
-function projectFrom(c: Configuration): Project {
+// In the cloud the main folder is the checkout where the configuration is, whatever `root` says.
+function projectFrom(c: Configuration, checkout?: string): Project {
   return {
     name: c.name,
     prefix: c.prefix,
-    root: expand(c.root),
+    root: checkout ?? expand(c.root),
+    cloud: checkout !== undefined,
     clones: c.clones,
-    lanes: c.lanes.map(({ id, name }) => ({ id, name })),
+    lanes: c.lanes.map(({ id, name, branches }) => ({ id, name, branches })),
     bench: expand(c.bench),
     lock: expand(c.lock),
     jobs: c.jobs ?? {},
@@ -188,6 +199,8 @@ async function findProject($: EngineInterface, cwd: string): Promise<Project | n
   for (let d = cwd; d.length > 1; d = d.slice(0, d.lastIndexOf('/')) || '/') {
     const c = await readConfiguration($, d)
     if (c === null) continue
+    // In the cloud there is no main folder with its clones: the checkout is the project.
+    if (cloud) return projectFrom(c, d)
     const root = expand(c.root)
     const real = root === d ? c : await readConfiguration($, root)
     return real !== null && inside(cwd, root) ? projectFrom(real) : null
@@ -199,7 +212,7 @@ async function findProject($: EngineInterface, cwd: string): Promise<Project | n
 async function allProjects($: EngineInterface): Promise<Project[]> {
   const seen = ((await $.store.get('projects')) as string[] | undefined) ?? []
   const read = await Promise.all(seen.map(dir => readConfiguration($, dir)))
-  const projects = read.flatMap(c => (c === null ? [] : [projectFrom(c)]))
+  const projects = read.flatMap((c, i) => (c === null ? [] : [cloud ? projectFrom(c, seen[i]) : projectFrom(c)]))
   if (myProject !== null && !projects.some(p => p.root === myProject?.root)) projects.unshift(myProject)
   return projects
 }
@@ -244,7 +257,8 @@ async function conversationOf($: EngineInterface): Promise<string | undefined> {
 async function orient($: EngineInterface, cwd: string) {
   seenCwd = cwd
   myProject = await findProject($, cwd)
-  mine = myProject && laneOf(myProject, cwd)
+  // In the cloud a lane's coding session is the one whose checkout is on a lane's branch.
+  mine = myProject && (myProject.cloud ? laneOfBranch(myProject, await run($, ['git', '-C', cwd, 'branch', '--show-current'])) : laneOf(myProject, cwd))
   // The id that messages between sessions carry in their «from».
   const session = (await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')) ?? (await $.session.id())
   const conversation = mine === null ? undefined : await conversationOf($)
@@ -338,6 +352,8 @@ function readMessage(text: string): { from: string; peer: string; line: string }
 }
 
 const laneOf = (p: Project, path: string) => p.lanes.find(l => inside(path, folder(p, l.id)))?.id ?? null
+const laneOfBranch = (p: Project, branch: string) =>
+  p.lanes.find(l => l.branches.some(b => b !== '' && branch.startsWith(b)))?.id ?? null
 
 // Elapsed time as ps writes it: [[dd-]hh:]mm:ss.
 function seconds(etime: string): number {
@@ -483,10 +499,24 @@ function reviewOf(id: string, annotation: Annotation, all: Annotation[]): Review
 // The folder name may have zero-padded numbers, cp06 for the branch dev/cp6, or not.
 // Without a title on the first line, the title is that of the checkpoint's section in the document
 // the prompt names, read in the clone.
-async function readJob($: EngineInterface, p: Project, id: string, slug: string, dir: string): Promise<Job | null> {
+// In the cloud the prompt is read on the job's branch, in docs/handoffs/<lane>/<job>/prompt.md,
+// and so is the document it names.
+type Reader = { prompt: (folder: string) => Promise<string>; document: (path: string) => Promise<string> }
+
+const benchReader = ($: EngineInterface, p: Project, id: string, dir: string): Reader => ({
+  prompt: name => readText($, `${p.bench}/${p.prefix}-${id}/${name}/prompt.md`),
+  document: path => readText($, `${dir}/${path}`),
+})
+
+const branchReader = ($: EngineInterface, p: Project, id: string, ref: string): Reader => ({
+  prompt: name => run($, ['git', '-C', p.root, 'show', `${ref}:${HANDOFFS}/${id}/${name}/prompt.md`]),
+  document: path => run($, ['git', '-C', p.root, 'show', `${ref}:${path}`]),
+})
+
+async function readJob(read: Reader, slug: string): Promise<Job | null> {
   const folders = new Set([slug, slug.replace(/\d+/g, n => n.padStart(2, '0')), slug.replace(/\d+/g, n => String(Number(n)))])
   for (const name of folders) {
-    const prompt = await readText($, `${p.bench}/${p.prefix}-${id}/${name}/prompt.md`)
+    const prompt = await read.prompt(name)
     const first = prompt.split('\n').find(r => r.trim() !== '')
     if (first === undefined) continue
     // Titles are separated by « — », « – », « - » or «: ».
@@ -500,7 +530,7 @@ async function readJob($: EngineInterface, p: Project, id: string, slug: string,
     const document = prompt.match(/docs\/[\w./-]+\.md/)?.[0]
     if (description === null && number !== undefined && document !== undefined) {
       const section = new RegExp(`^#{2,4} Checkpoint ${Number(number)}\\s*[—–:-]\\s*(.+)$`, 'm')
-      description = (await readText($, `${dir}/${document}`)).match(section)?.[1]?.trim() ?? null
+      description = (await read.document(document)).match(section)?.[1]?.trim() ?? null
     }
     return { checkpoint, description }
   }
@@ -520,7 +550,7 @@ async function readLane($: EngineInterface, p: Project, l: { id: string; name: s
     readAnnotation($, annotationFile(p, l.id)),
   ])
   const slug = branch === '' || branch === 'main' ? null : branch.slice(branch.indexOf('/') + 1)
-  const job = slug === null ? null : await readJob($, p, l.id, slug, dir)
+  const job = slug === null ? null : await readJob(benchReader($, p, l.id, dir), slug)
   const [when, ...subject] = log.split('\t')
   const writtenMs = Number(written) * 1000
   const estimated = annotation.activity === undefined && written !== ''
@@ -541,14 +571,81 @@ async function readLane($: EngineInterface, p: Project, l: { id: string; name: s
     toClean:
       annotation.dirty === true &&
       (slug === null || (annotation.handoff?.direction === 'in' && CLOSEOUT.test(annotation.handoff.text))),
+    toArchive: [],
+    cloudSession: null,
     review: reviewOf(l.id, annotation, all),
   }
 }
 
+// In the cloud: the lane's open job is its most recent branch on origin not yet merged into the
+// reviewer's main, or one whose coding session has not had its close-out (a branch just created
+// has nothing to merge). Its coding session, the last message and the sessions to archive come
+// from what the guard notes in cloud.json; the activity of a session in another container is not
+// visible from here.
+async function readCloudLane(
+  $: EngineInterface,
+  p: Project,
+  l: { id: string; name: string; branches: string[] },
+  sessions: [string, CloudSession][],
+  all: Annotation[],
+) {
+  const git = (...args: string[]) => run($, ['git', '-C', p.root, ...args])
+  const ours = (b: string) => laneOfBranch(p, b) === l.id
+  const [unmerged, refs] = await Promise.all([
+    git('branch', '-r', '--no-merged', 'main', '--format=%(refname:short)'),
+    git('for-each-ref', '--sort=-committerdate', '--format=%(refname:short)', 'refs/remotes/origin'),
+  ])
+  const open = new Set(unmerged.split('\n').map(r => r.replace(/^origin\//, '')).filter(ours))
+  const live = sessions.filter(([, c]) => c.branch !== undefined && ours(c.branch) && !c.archived)
+  for (const [, c] of live) if (c.branch && !CLOSEOUT.test(c.last ?? '')) open.add(c.branch)
+  const branch = refs.split('\n').map(r => r.replace(/^origin\//, '')).find(b => open.has(b)) ?? ''
+  const ref = `origin/${branch}`
+  const [ahead, log] = branch === '' ? ['', ''] : await Promise.all([git('rev-list', '--count', `main..${ref}`), git('log', '-1', '--format=%ct%x09%s', ref)])
+  const slug = branch === '' ? null : branch.slice(branch.indexOf('/') + 1)
+  const job = slug === null ? null : await readJob(branchReader($, p, l.id, ref), slug)
+  const [when, ...subject] = log.split('\t')
+  // The newest session of the job's branch.
+  const [session, noted] = sessions.filter(([, c]) => branch !== '' && c.branch === branch).sort((a, b) => (b[1].at ?? 0) - (a[1].at ?? 0))[0] ?? []
+  const handoff: Handoff | null =
+    noted?.last !== undefined ? { direction: 'in', text: noted.last, peer: '', at: (noted.at ?? 0) * 1000 } : null
+  return {
+    id: l.id,
+    name: l.name,
+    branch,
+    slug,
+    job,
+    ahead: Number(ahead) || 0,
+    dirtyFiles: 0,
+    last: slug !== null && log !== '' ? { at: Number(when) * 1000, text: subject.join('\t') } : null,
+    activity: null,
+    activitySince: null,
+    estimated: false,
+    handoff,
+    toClean: false,
+    toArchive: live.filter(([, c]) => CLOSEOUT.test(c.last ?? '')).map(([id, c]) => ({ session: id, prompt: c.prompt ?? '' })),
+    cloudSession: session !== undefined && noted?.archived !== true && !CLOSEOUT.test(noted?.last ?? '') ? session : null,
+    review: reviewOf(l.id, {}, all),
+  }
+}
+
+// The checkout fetches from origin at most every few minutes: the other sessions push there.
+async function fetchOrigin($: EngineInterface, p: Project, now: number) {
+  if (now - fetchedAt < FETCH_EVERY_MS) return
+  fetchedAt = now
+  await run($, ['git', '-C', p.root, 'fetch', '-q', '--prune', 'origin'])
+}
+
+async function readCloudSessions($: EngineInterface, p: Project): Promise<[string, CloudSession][]> {
+  const raw = await readJson<unknown>($, cloudFile(p))
+  return isRaw(raw) ? Object.entries(raw).flatMap(([id, c]) => (isRaw(c) ? [[id, c as CloudSession] as [string, CloudSession]] : [])) : []
+}
+
 async function readProject($: EngineInterface, p: Project, read: number): Promise<State> {
   const all = await readReviews($, p)
+  if (p.cloud) await fetchOrigin($, p, read)
+  const sessions = p.cloud ? await readCloudSessions($, p) : []
   const [lanes, push, processes] = await Promise.all([
-    Promise.all(p.lanes.map(l => readLane($, p, l, read, all))),
+    Promise.all(p.lanes.map(l => (p.cloud ? readCloudLane($, p, l, sessions, all) : readLane($, p, l, read, all)))),
     run($, ['git', '-C', p.root, 'rev-list', '--count', 'origin/main..main']),
     readProcesses($, p, read, all),
   ])
@@ -579,7 +676,8 @@ async function refresh($: EngineInterface, projects: Project[]) {
     if (s !== undefined) latest.set(p.root, s)
   })
   $.ui.invalidate('ui.render')
-  if (myProject !== null && mine === null && projects.some(p => p.root === myProject?.root)) {
+  // No app log in the cloud: a container reclaimed for inactivity is rebuilt by the next message.
+  if (myProject !== null && !myProject.cloud && mine === null && projects.some(p => p.root === myProject?.root)) {
     await wakeUp($, myProject, read)
   }
   return states
@@ -663,6 +761,8 @@ function signal(b: Lane): Signal {
   if (isWaiting(b)) return { symbol: '◔', color: 'suggestion', word: 'waiting', since: waitingSince(b), estimated: false }
   if (worthALook(b)) return { symbol: '◐', color: 'warning', word: 'idle', since, estimated: b.estimated }
   if (b.activity === 'idle') return { symbol: '○', color: 'subtle', word: 'idle', since, estimated: b.estimated }
+  // In the cloud the coding session works in its own container: the mod knows it exists, not what it does.
+  if (b.cloudSession !== null) return { symbol: '◇', color: 'subtle', word: `in the cloud (${b.cloudSession})`, since: null, estimated: false }
   return { symbol: '·', color: 'subtle', word: 'no session seen', since: null, estimated: false }
 }
 
@@ -766,6 +866,9 @@ function e2eLine(s: State): string {
 
 // The job is closed and the close-out has not arrived, or the session did not clean itself afterwards.
 const TO_CLEAN = 'to clean: the job is closed, but the coding session still has its conversation'
+// In the cloud: the close-out went out, and the session has not been archived yet.
+const toArchiveLine = (a: { session: string; prompt: string }) =>
+  `to archive: ${a.session}${a.prompt ? ` («${a.prompt}»)` : ''} has had its close-out, and the reviewer archives it with the owner's ok`
 
 function needsYou(s: State): string[] {
   const lines: string[] = []
@@ -775,6 +878,7 @@ function needsYou(s: State): string[] {
     else if (worthALook(b) && b.handoff) lines.push(`${b.name}: idle after «${b.handoff.text}», check whether it is waiting for you`)
     if (b.review?.activity === 'permission') lines.push(`${b.name}: the reviewer is waiting for a permission`)
     if (b.toClean) lines.push(`${b.name}: ${TO_CLEAN}`)
+    for (const a of b.toArchive) lines.push(`${b.name}: ${toArchiveLine(a)}`)
   }
   return lines
 }
@@ -800,6 +904,7 @@ function summary(s: State): string {
     for (const r of branchLines(b, s.read)) lines.push(`  ${r}`)
     if (b.handoff) lines.push(`  ${handoffLine(b.handoff, s.read)}`)
     if (b.toClean) lines.push(`  ${TO_CLEAN}`)
+    for (const a of b.toArchive) lines.push(`  ${toArchiveLine(a)}`)
   }
   const needs = needsYou(s)
   lines.push('', needs.length > 0 ? `Needs you: ${needs.join('; ')}` : 'Nothing needs you')
@@ -838,6 +943,7 @@ async function lanesCommand($: EngineInterface, e: { args: string }) {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     home = (await $.env.get('HOME')) ?? ''
+    cloud = (await $.env.get('CLAUDE_CODE_REMOTE')) === 'true'
     await orient($, e.cwd)
     const description = "The state of the lanes: of the session's project, or of the one named, or of all"
     // A command named like a skill of the plugin is refused by Claude Code: never let that stop the rest of the start-up.
@@ -901,6 +1007,8 @@ export const register: Register = on => {
   on('turn.complete', ($, e, next) => {
     if (myFile !== null && e.agentId === undefined) annotateActivity($, 'idle')
     if (mine !== null && e.agentId === undefined) {
+      // In the cloud the reviewer archives the session at close-out: no /clear (metodo:handoffs, «In the cloud»).
+      if (closedOut && cloud) closedOut = false
       if (closedOut && e.reason === 'answer' && !e.answer.trim().endsWith('?')) {
         closedOut = false
         $.clock.after(1000, () => void $.command.run({ command: 'clear', args: '' }))
@@ -1028,6 +1136,11 @@ export const register: Register = on => {
                         {TO_CLEAN}
                       </Text>
                     )}
+                    {b.toArchive.map(a => (
+                      <Text color="warning" wrap="wrap">
+                        {toArchiveLine(a)}
+                      </Text>
+                    ))}
                   </Box>
                 </Box>
               ))}

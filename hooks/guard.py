@@ -35,8 +35,10 @@ to `main`, or a forced one, asks for confirmation; any other push is blocked.
    «Prompt for…» to a session that has already received one is blocked. A session is
    archived only after its «Close-out of…», and the owner confirms every archive. What
    was sent to whom the guard notes, after each delivered message (PostToolUse), in
-   `<bench>/state/cloud.json`, in the reviewer's own container; with that file missing
-   nobody knows, and the archive only asks.
+   `<bench>/state/cloud.json`, in the reviewer's own container: the first prompt, the
+   last message, the job's branch the messages name, and, after an archive, that the
+   session is archived. The lanes mod reads it. With that file missing nobody knows,
+   and the archive only asks.
 
 Changes through Bash to protected files are caught only for the most common commands
 (rm, mv, sed -i, perl -i, truncate, tee, redirection): this is not a complete barrier.
@@ -293,17 +295,21 @@ def check_send(tool_input, cfg):
               "A message of the same job does not start with «Prompt for…».")
 
 
-def note_sent(tool_input, cfg):
-    """After a delivered message: what went to that session, for the next prompt and for the archive."""
-    target = tool_input.get("session_id", "")
+def branch_named(text, cfg):
+    """The first lane branch a message names («branch fix/C-12»), or None."""
+    prefixes = [p for lane in cfg.get("lanes", []) for p in lane.get("branches", []) if p]
+    if not prefixes:
+        return None
+    m = re.search(r"(?<![\w/.-])((?:" + "|".join(re.escape(p) for p in prefixes) + r")[\w./-]*[\w-])", text or "")
+    return m.group(1) if m else None
+
+
+def note(target, cfg, change):
     if not target:
         return
-    line = first_line(tool_input.get("message", ""))
     state = read_cloud_state(cfg)
     seen = state.get(target) or {}
-    seen.update({"last": line, "at": int(time.time())})
-    if PROMPT.match(line) and not seen.get("prompt"):
-        seen["prompt"] = line
+    change(seen)
     state[target] = seen
     file = cloud_state_file(cfg)
     try:
@@ -312,6 +318,26 @@ def note_sent(tool_input, cfg):
             json.dump(state, f)
     except OSError:
         pass
+
+
+def note_sent(tool_input, cfg):
+    """After a delivered message: what went to that session, for the next prompt, the archive and the lanes mod."""
+    message = tool_input.get("message", "")
+    line = first_line(message)
+    branch = branch_named(message, cfg)
+
+    def change(seen):
+        seen.update({"last": line, "at": int(time.time())})
+        if PROMPT.match(line) and not seen.get("prompt"):
+            seen["prompt"] = line
+        if branch and not seen.get("branch"):
+            seen["branch"] = branch
+
+    note(tool_input.get("session_id", ""), cfg, change)
+
+
+def note_archived(tool_input, cfg):
+    note(tool_input.get("session_id", ""), cfg, lambda seen: seen.update({"archived": True}))
 
 
 def check_archive(tool_input, cfg):
@@ -345,6 +371,8 @@ def main():
         if data.get("hook_event_name") == "PostToolUse":
             if tool == SEND:
                 note_sent(tool_input, found[1])
+            else:
+                note_archived(tool_input, found[1])
         elif tool == SEND:
             check_send(tool_input, found[1])
         else:

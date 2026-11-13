@@ -56,11 +56,11 @@ The plugin acts only in projects that have a `.claude/metodo.json`.
 | `scripts/cleanup.sh` | `git`, `docker`; `lockf` (macOS) with fallback to `flock`; in the cloud it reads the closed jobs from `origin` and writes the push instead of running it | yes | yes |
 | `delivery-check` sub-agent | plugin sub-agents | yes | yes |
 | **Messages between sessions** (`SendMessage`, `list_sessions`, `start_session`) | **Claude Code desktop** | no | no |
-| **Lanes mod** (status line, `/lanes-status`, panel, auto `/clear`, dirty-session refusal) | Claude Code's mod API (not stable); the panel is desktop-only | to be verified | only if the desktop app runs |
+| **Lanes mod** (status line, `/lanes-status`, panel, auto `/clear`, dirty-session refusal) | Claude Code's mod API (not stable); the panel is desktop-only; in the cloud it reads the lanes from `origin` and shows «to archive», without `/clear` | to be verified | only if the desktop app runs; in the cloud, to be verified |
 | **Wake-up** of a coding session closed by the app | the desktop app's log (format not documented, may change) | no | no |
 | **Cloud sessions** (`create_session`, `send_message`, `archive_session`; one coding session per job, archived at close-out) | Claude Code on the web (claude.ai/code) and its `claude-code-remote` tools | no | in the cloud |
 
-In the cloud the coordination works differently: every session has its own container, so there are no clones and no panel; a coding session is opened for each job on its branch, the work goes through `origin`, and at close-out the session is archived instead of cleaned (`skills/handoffs/SKILL.md`, «In the cloud»). The guard, the delivery gate and the start-up hook recognize a cloud coding session by its lane branch.
+In the cloud the coordination works differently: every session has its own container, so there are no clones, and the lanes mod reads the lanes from the branches on `origin`; a coding session is opened for each job on its branch, the work goes through `origin`, and at close-out the session is archived instead of cleaned (`skills/handoffs/SKILL.md`, «In the cloud»). The guard, the delivery gate and the start-up hook recognize a cloud coding session by its lane branch.
 
 Two levels, then: the **core** (hooks, skills, templates, scripts) works in a terminal and on Linux, because it is hooks, files and git. The **coordination between sessions** needs Claude Code desktop and, for now, macOS. The mod uses unstable APIs and may break with a Claude Code update.
 
