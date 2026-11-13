@@ -364,6 +364,37 @@ class Delivery(unittest.TestCase):
         sh(cloud, "git", "switch", "-q", "main")
         self.assertEqual(self.run_gate(t, cloud, cloud=True)[0], 0)
 
+    def test_in_the_cloud_the_delivery_waits_for_the_branch_on_origin(self):
+        self.clear_docs()
+        cloud = os.path.join(self.tdir, "cloud-push")
+        sh(self.tdir, "git", "clone", "-q", self.main, cloud)
+        sh(cloud, "git", "switch", "-q", "-c", "dev/cp5")
+        os.makedirs(os.path.join(cloud, "docs", "blocks"))
+        with open(os.path.join(cloud, "docs", "blocks", "1.md"), "w") as f:
+            f.write("## Checkpoint 5\n**Done:** run 1, 12 passed\n")
+        t = self.transcript("Delivery of checkpoint 5", "delivery-check")
+        # uncommitted
+        code, err = self.run_gate(t, cloud, cloud=True)
+        self.assertEqual(code, 2)
+        self.assertIn("uncommitted", err)
+        sh(cloud, "git", "add", ".")
+        sh(cloud, "git", "-c", "user.name=p", "-c", "user.email=p@p", "commit", "-q", "-m", "cp5")
+        # committed, not pushed
+        code, err = self.run_gate(t, cloud, cloud=True)
+        self.assertEqual(code, 2)
+        self.assertIn("git push -u origin dev/cp5", err)
+        # on the desktop the same checkout is not a coding session: nothing is asked
+        self.assertEqual(self.run_gate(t, cloud, cloud=False)[0], 0)
+        sh(cloud, "git", "push", "-q", "origin", "dev/cp5")
+        self.assertEqual(self.run_gate(t, cloud, cloud=True)[0], 0)
+
+    def test_on_the_desktop_a_clone_delivery_does_not_need_a_push(self):
+        self.clear_docs()
+        self.write_done("docs/blocks", "1.md", "## Checkpoint 3\n**Done:** run 1, output 12 passed\n")
+        # the clone's branch dev/cp1 is not on origin, the tree is dirty: on the desktop it does not matter
+        self.assertEqual(self.run_gate(self.transcript("Delivery of checkpoint 3", "delivery-check"))[0], 0)
+        self.clear_docs()
+
     def test_doc_paths_from_config_and_fallback(self):
         self.clear_docs()
         self.assertEqual(doc_paths(self.clone, {}), ("docs/blocks", "docs/corrections.md"))

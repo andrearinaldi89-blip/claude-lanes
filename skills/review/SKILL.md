@@ -32,4 +32,5 @@ The reviewer tries to break the work on its own bench, never in the clone, whose
 - **A timing variant must be seen red on the old code**, then green on the new: always green proves nothing.
 - **Heavy work runs under the lock** while CI is running: `tsc`, `npm`, `cp -Rc` of the `node_modules`. Outside the lock it can turn a timing test of CI red.
 - **A script that rewrites environment files**, like CI, is launched only from a copy, never from the main folder or a clone.
+- **In the cloud** the coding session's container is not reachable, and the reviewer's bench is in its own container: the copy is made from `git fetch origin <branch>` (a `git worktree add <bench>/<job>/<copy> origin/<branch>` or an export of that commit), with the same `copyMarker` file so that the cleanup finds it. The notes on Colima and APFS are the Mac's: in the cloud a plain copy is enough.
 - **At the end, nothing is cleaned by hand**: the copies, containers, volumes and images of the job are removed by the close-out cleanup, if they have the right names.

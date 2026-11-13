@@ -13,7 +13,10 @@ it does not let the turn end (exit 2, the reason on stderr reaches the session):
    `subagent_type` names it (also the old name `controllo-consegna`), after the last
    Edit/Write/MultiEdit;
 2. the "Done" is written: `<blocks>/*.md` or the corrections file changed with respect to
-   `origin/main`, and the added lines are not just the template placeholder.
+   `origin/main`, and the added lines are not just the template placeholder;
+3. in the cloud only: the tree is clean and the branch is on origin as it is here. The
+   reviewer takes the work from origin, and a container reclaimed for inactivity loses
+   what was not pushed (metodo:handoffs, "In the cloud").
 
 Everything else (runs, mutations, real outputs) is left to `delivery-check` and to the
 reviewer: here only the one who delivers without having called them is stopped.
@@ -25,7 +28,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from config import doc_paths, find_config, is_coding_session  # noqa: E402
+from config import doc_paths, find_config, in_cloud, is_coding_session  # noqa: E402
 
 PLACEHOLDERS = ("TO FILL", "lo scrive la sessione di codice")
 SUBAGENTS = ("delivery-check", "controllo-consegna")
@@ -105,6 +108,23 @@ def done_written(cwd, cfg):
     return len(substance) > 0
 
 
+def pushed(cwd, branch):
+    """In the cloud: what is missing for the branch to be on origin as it is here, or None."""
+    if (git(cwd, "status", "--porcelain") or "").strip():
+        return "the tree has uncommitted changes: commit them"
+    head = (git(cwd, "rev-parse", "HEAD") or "").strip()
+    try:
+        r = subprocess.run(["git", "-C", cwd, "ls-remote", "origin", f"refs/heads/{branch}"],
+                           capture_output=True, text=True, timeout=20)
+        remote = r.stdout.split()[0] if r.returncode == 0 and r.stdout.strip() else ""
+    except (subprocess.TimeoutExpired, OSError):
+        # Origin does not answer: the last ref seen is the best there is.
+        remote = (git(cwd, "rev-parse", "-q", "--verify", f"refs/remotes/origin/{branch}") or "").strip()
+    if remote != head:
+        return f"the branch {branch} is not on origin as it is here: `git push -u origin {branch}`"
+    return None
+
+
 def main():
     try:
         data = json.load(sys.stdin)
@@ -112,7 +132,8 @@ def main():
         return
     cwd = data.get("cwd") or os.getcwd()
     found = find_config(cwd)
-    if not found or not is_coding_session(cwd, found[1], (git(cwd, "branch", "--show-current") or "").strip()):
+    branch = (git(cwd, "branch", "--show-current") or "").strip()
+    if not found or not is_coding_session(cwd, found[1], branch):
         return
     cfg = found[1]
     ev = events(data.get("transcript_path", ""))
@@ -128,6 +149,11 @@ def main():
         blocks, corrections = doc_paths(cwd, cfg)
         missing.append(f'the "Done" is not written under the block\'s section ({blocks}/) or the correction\'s '
                        f"({corrections}): the real output of every run and every mutation")
+    if in_cloud():
+        gap = pushed(cwd, branch)
+        if gap:
+            missing.append(f"{gap}. In the cloud the reviewer takes the work from origin, and a container "
+                           "reclaimed for inactivity loses what is not there")
     if missing:
         print('The delivery does not go out (the method\'s delivery hook, METHOD.md "writing code"):\n- '
               + "\n- ".join(missing) + "\nThen send the report again.", file=sys.stderr)

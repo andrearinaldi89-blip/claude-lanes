@@ -21,7 +21,7 @@
 | Piece | What it does |
 |---|---|
 | **Guard** (`hooks/guard.py`, PreToolUse) | Blocks the commands you would regret: editing an already-applied migration, a `docker compose` that deletes volumes without naming its project, protected volumes, `prune -a`, a release from outside the main folder, a `git push` from a clone. In the cloud: a second job's prompt to the same coding session, and an archive before the close-out. |
-| **Delivery gate** (`hooks/delivery.py`, Stop) | A «Delivery of…» report from a clone does not go out without the `delivery-check` sub-agent having run and the «Done» written. |
+| **Delivery gate** (`hooks/delivery.py`, Stop) | A «Delivery of…» report from a clone does not go out without the `delivery-check` sub-agent having run and the «Done» written; in the cloud, also not with uncommitted changes or a branch not on `origin`. |
 | **Start-up orientation** (`hooks/startup.sh`, SessionStart) | Prints branch, commit, tree state and distance from `origin/main` when a coding session opens. |
 | **Lanes panel** (`/lanes-status`, status line) | One line above the prompt, and a panel: what each lane is doing, who holds the end-to-end lock, which sessions are to clean. |
 | **Close-out cleanup** (`scripts/cleanup.sh`) | After a merge, deletes merged branches and the bench copies, containers, volumes and images of that job, found by name. Never touches protected things. |

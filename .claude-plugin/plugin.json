@@ -1,6 +1,6 @@
 {
   "name": "metodo",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "A review-and-build workflow for Claude Code: lanes of coding sessions in separate clones, a guard, a delivery check, a handoff protocol and a close-out cleanup",
   "author": { "name": "Andrea Rinaldi" },
   "license": "MIT"
