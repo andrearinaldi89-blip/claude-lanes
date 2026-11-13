@@ -196,6 +196,8 @@ class GuardCloud(unittest.TestCase):
         self.assertEqual((code, decision(out)), (0, "ask"))
         code, out, _ = self.bash("git push --force origin dev/cp1")
         self.assertEqual((code, decision(out)), (0, "ask"))
+        code, out, _ = self.bash("git push origin :dev/cp0")
+        self.assertEqual((code, decision(out)), (0, "ask"))
         code, _, err = self.bash("git push origin feature/x")
         self.assertEqual(code, 2)
         self.assertIn("feature/x", err)

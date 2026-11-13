@@ -36,7 +36,7 @@ A plugin installed from a local folder is read in place, without copying: a chan
 | `hooks/delivery.py` | the delivery gate (Stop hook): a «Delivery of…» from a clone does not go out without `delivery-check` and without the «Done» |
 | `hooks/startup.sh` | the coding session's orientation (SessionStart hook): branch, commit, tree, distance from `origin/main` |
 | `agents/delivery-check.md` | the sub-agent that rereads the delivery before the review |
-| `scripts/cleanup.sh` | the close-out cleanup: branches, bench, Docker, `fstrim` |
+| `scripts/cleanup.sh` | the close-out cleanup: branches, bench, Docker, `fstrim`; in the cloud, the closed branches on origin and the push that deletes them, for the owner |
 | `scripts/clones.sh` | prepares the lanes' clones inside the main folder |
 | `templates/` | the starting configuration, the decision log page, the `DESIGN.md` skeleton and the block document |
 | `tests/` | the tests of the three pieces |

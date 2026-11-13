@@ -53,7 +53,7 @@ The plugin acts only in projects that have a `.claude/metodo.json`.
 | `METHOD.md`, skills, templates | Claude Code (skills, `@import`) | yes | yes |
 | Guard, delivery gate, start-up hook | Claude Code hooks, Python 3, `git` | **yes** | **yes** |
 | `scripts/clones.sh` | `git`, `python3` | yes | yes |
-| `scripts/cleanup.sh` | `git`, `docker`; `lockf` (macOS) with fallback to `flock` | yes | yes |
+| `scripts/cleanup.sh` | `git`, `docker`; `lockf` (macOS) with fallback to `flock`; in the cloud it reads the closed jobs from `origin` and writes the push instead of running it | yes | yes |
 | `delivery-check` sub-agent | plugin sub-agents | yes | yes |
 | **Messages between sessions** (`SendMessage`, `list_sessions`, `start_session`) | **Claude Code desktop** | no | no |
 | **Lanes mod** (status line, `/lanes-status`, panel, auto `/clear`, dirty-session refusal) | Claude Code's mod API (not stable); the panel is desktop-only | to be verified | only if the desktop app runs |

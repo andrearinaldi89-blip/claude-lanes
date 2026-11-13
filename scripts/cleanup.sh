@@ -27,6 +27,21 @@
 #    the image above them is gone), then `colima ssh -- sudo fstrim -a`, which gives back
 #    to the Mac the space freed in the virtual machine's disk. Never `prune -a`, which
 #    also takes other projects' images. The report goes in `<bench>/cleanup.log`.
+#
+# In the cloud (claude.ai/code, `CLAUDE_CODE_REMOTE=true`) the reviewer runs it from its
+# own checkout: there is no main folder to match and there are no clones. The job's work
+# lives on origin, so:
+# - the lane branches on origin already merged into main are closed jobs. A branch whose
+#   tip is on main's first-parent line has no commits of its own (just created for a job
+#   that is starting, or merged fast-forward) and stays: merge the jobs with --no-ff.
+# - Deleting them on origin is a push, and the push is the owner's: the script does not
+#   push, it writes the one command that does it, together with main if main is ahead of
+#   origin; the reviewer runs it and the guard asks the owner.
+# - The local copies of those branches go, even with no commits of their own: the
+#   commits were made in the coding session's container.
+# - The bench and Docker are cleaned as above, in the reviewer's container.
+# - The coding sessions are archived by the reviewer (metodo:handoffs, "In the cloud"):
+#   a script cannot do it, so it reminds.
 set -euo pipefail
 
 HOOKS="$(cd "$(dirname "$0")/../hooks" && pwd)"
@@ -51,6 +66,9 @@ if [ "${1:-}" = "--queued" ]; then
   echo "$(date '+%F %T') cleanup queue finished"
   exit 0
 fi
+
+CLOUD=0
+[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] && CLOUD=1
 
 DRY=${1:-}
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
@@ -91,7 +109,10 @@ PY
 }
 eval "$(settings)"
 
-if [ "$(cd "$MAIN" && pwd -P)" != "$(cd "$ROOT" 2>/dev/null && pwd -P)" ]; then
+# In the cloud every session has its own checkout: no main folder, no clones.
+if [ $CLOUD -eq 1 ]; then
+  CLONES=()
+elif [ "$(cd "$MAIN" && pwd -P)" != "$(cd "$ROOT" 2>/dev/null && pwd -P)" ]; then
   echo "This is $MAIN, but the project's main folder is $ROOT: run the cleanup from there." >&2
   exit 1
 fi
@@ -187,6 +208,29 @@ clean_docker() {
 }
 
 CLOSED=()
+# In the cloud: the lane branches closed on origin, merged into main with commits of their own.
+REMOTE_CLOSED=()
+
+closed_on_origin() {
+  local branch=$1 b
+  for b in ${REMOTE_CLOSED[@]+"${REMOTE_CLOSED[@]}"}; do [ "$b" = "$branch" ] && return 0; done
+  return 1
+}
+
+find_closed_on_origin() {
+  local first remote branch
+  first=$(git -C "$MAIN" rev-list --first-parent main)
+  while read -r remote <&3; do
+    branch=${remote#origin/}
+    case "$branch" in main | release/* | HEAD | origin) continue ;; esac
+    [ -n "$(job_of "$branch")" ] || continue
+    if printf '%s\n' "$first" | grep -qx "$(git -C "$MAIN" rev-parse "$remote")"; then
+      echo "  origin: $branch has no commits of its own off main's line, leaving it"
+      continue
+    fi
+    REMOTE_CLOSED+=("$branch")
+  done 3< <(git -C "$MAIN" branch -r --merged main --format='%(refname:short)' | { grep '^origin/' || true; })
+}
 
 delete_merged() {
   local dir=$1 base=$2
@@ -198,7 +242,8 @@ delete_merged() {
     # A branch with no commits of its own counts as merged even when just born: it is
     # the one the reviewer creates for a job that is starting. The reflog tells.
     history=$(git -C "$dir" reflog show --format='%gs' "refs/heads/$branch" 2>/dev/null || true)
-    if [ -z "$(printf '%s\n' "$history" | grep -v '^branch: Created from' || true)" ]; then
+    # In the cloud the commits are on origin, made in the coding session's container.
+    if ! closed_on_origin "$branch" && [ -z "$(printf '%s\n' "$history" | grep -v '^branch: Created from' || true)" ]; then
       echo "  $dir: $branch has no commits of its own, leaving it"
       continue
     fi
@@ -216,10 +261,14 @@ delete_merged() {
   done 3< <(git -C "$dir" branch --merged "$base" --format='%(refname:short)' | { grep -v -e '^main$' -e '^release/' || true; })
 }
 
-echo "Main folder"
+if [ $CLOUD -eq 1 ]; then echo "The reviewer's checkout, in the cloud"; else echo "Main folder"; fi
 if [ -n "$(git -C "$MAIN" status --short)" ]; then
-  echo "  WARNING: the main folder has uncommitted changes"
+  echo "  WARNING: $( [ $CLOUD -eq 1 ] && echo "the checkout" || echo "the main folder") has uncommitted changes"
   git -C "$MAIN" status --short | sed 's/^/    /'
+fi
+if [ $CLOUD -eq 1 ]; then
+  git -C "$MAIN" fetch -q --prune origin || echo "  WARNING: git fetch from origin failed: the branches on origin are as last seen"
+  find_closed_on_origin
 fi
 delete_merged "$MAIN" main
 
@@ -240,6 +289,9 @@ for clone in "${CLONES[@]}"; do
   fi
   delete_merged "$clone" origin/main
 done
+
+# A branch closed on origin is a closed job even when it has no local copy.
+for branch in ${REMOTE_CLOSED[@]+"${REMOTE_CLOSED[@]}"}; do CLOSED+=("$branch"); done
 
 # The things of closed jobs, once per job even if the branch was in several folders.
 shopt -s nocasematch
@@ -265,6 +317,20 @@ if [ $DOCKER_REMOVED -eq 1 ]; then
   nohup "${QUEUED[@]}" "$SELF" --queued >>"$BENCH/cleanup.log" 2>&1 </dev/null &
   disown
   echo "Untagged images and fstrim: queued behind the lock, the report in $BENCH/cleanup.log"
+fi
+
+if [ $CLOUD -eq 1 ]; then
+  if [ ${#REMOTE_CLOSED[@]} -gt 0 ]; then
+    ahead=$(git -C "$MAIN" rev-list --count origin/main..main 2>/dev/null || echo 0)
+    deletions=$(printf ' :%s' "${REMOTE_CLOSED[@]}")
+    echo "Closed on origin: ${REMOTE_CLOSED[*]}. Deleting them is a push, and the owner decides: run"
+    if [ "$ahead" -gt 0 ]; then
+      echo "  git push origin main$deletions"
+    else
+      echo "  git push origin$deletions"
+    fi
+  fi
+  echo "The coding sessions of the closed jobs: after their «Close-out of…», archive them (metodo:handoffs, \"In the cloud\")."
 fi
 
 echo "Branches left:"
