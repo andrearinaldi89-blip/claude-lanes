@@ -14,7 +14,7 @@
 
 From the second block on: «The «How we work» of the previous block applies, line by line, delivery check included. In addition, for this block: …». For the first one, these lines, each of which cost a round of review somewhere, with the project's own in their place:
 
-- **The lane is development**: work in the clone `CLONE`, on branch `development/cpNN`, which the reviewer creates from the latest `main`. Never in the main folder. The merge to `main` is done by the reviewer, after the «Verification».
+- **The lane is development**: work in the clone `CLONE`, on branch `development/cpNN`, which the reviewer creates from the latest `main`. Never in the main folder. The merge to `main` is done by the reviewer, after the «Verification». *In the cloud: work in the session's own checkout, on branch `development/cpNN`, which the reviewer creates and pushes; push it before every plan that names files and before the delivery.*
 - **A plan first**, then the code: for every item what changes, the test, and the mutation with which it will be seen red. All the checkpoint's items go in the plan, one by one. A redone plan replaces the previous one, and keeps its right parts too.
 - **Every test is seen red** by breaking the thing it watches, and the mutation breaks **only** that. The report gives the line of the assertion that went red: a red that comes from another line proves nothing.
 - **A wait that a mutation can block has its own timeout.** Without one, the test waits until its own timeout, and the red arrives without a line.
@@ -65,6 +65,25 @@ arrives as a message.
 No plan mode: until the ok, you only read.
 If a spec is ambiguous, incomplete or wrong, stop and report it
 to the reviewer instead of deciding it yourself.
+Before the report, launch the delivery-check sub-agent
+and fix what it finds.
+```
+
+In the cloud the prompt file goes on the job's branch, in `HANDOFFS/development/cpNN/prompt.md` (`docs.handoffs` of `metodo.json`), the reviewer opens a new coding session for the job (`metodo:handoffs`, «In the cloud») and sends it, with `send_message`, a message that starts with «Prompt for…» and gives the file, the branch and the commit:
+
+```text
+Prompt for checkpoint N of block N.
+You are in the cloud, in your own checkout, on branch development/cpNN, from commit ABCDEF.
+The prompt is HANDOFFS/development/cpNN/prompt.md on that branch: read it and follow it.
+First get your bearings: confirm branch and commit, that the tree is clean,
+and read the «Done» of the last closed checkpoint. If anything does not match,
+stop and tell the reviewer.
+Send the plan, the questions and the report to the reviewer, the session
+REVIEWER_ID that is sending you this prompt, with send_message, and then stop:
+the answer arrives as a new turn.
+Push the branch before every plan that names files and before the report:
+the reviewer reads it from origin.
+No plan mode: until the ok, you only read.
 Before the report, launch the delivery-check sub-agent
 and fix what it finds.
 ```

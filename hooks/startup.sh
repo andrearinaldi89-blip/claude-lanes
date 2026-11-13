@@ -58,4 +58,9 @@ LAST=$(grep -lE '^\*\*(Done|Fatto):\*\*' "$BLOCKS"/*.md 2>/dev/null | tail -1)
 if [ -n "$LAST" ]; then
   echo "- last block document with a \"Done\": $LAST (read the last closed one before starting)"
 fi
-echo "The prompt gives folder and branch: if they do not match these, stop and say so."
+if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
+  echo "- in the cloud: push this branch before every «Plan for…» that names files and before every «Delivery of…» (git push -u origin $BRANCH): the reviewer reads it from origin, and a container reclaimed for inactivity loses what is not pushed. Answer the reviewer with send_message to the session id its prompt gives."
+  echo "The prompt gives the branch: if it does not match this one, stop and say so."
+else
+  echo "The prompt gives folder and branch: if they do not match these, stop and say so."
+fi

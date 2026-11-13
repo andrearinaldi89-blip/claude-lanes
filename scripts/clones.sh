@@ -21,6 +21,10 @@
 set -euo pipefail
 
 HOOKS="$(cd "$(dirname "$0")/../hooks" && pwd)"
+if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
+  echo "In the cloud there are no clones: every coding session has its own container, opened by the reviewer on the job's branch (metodo:handoffs, \"In the cloud\"). Nothing to do." >&2
+  exit 0
+fi
 MAIN=$(git rev-parse --show-toplevel 2>/dev/null || true)
 CONF="$MAIN/.claude/metodo.json"
 if [ -z "$MAIN" ] || [ ! -f "$CONF" ]; then
